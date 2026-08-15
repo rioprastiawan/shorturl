@@ -1,4 +1,5 @@
 import type {
+  AuditEntry,
   AnalyticsRange,
   ApiKey,
   ClicksReport,
@@ -11,6 +12,7 @@ import type {
   Overview,
   Role,
   SetupStatus,
+  SystemBranding,
   TwoFactorSetup,
   User,
   Workspace,
@@ -56,6 +58,13 @@ export function useServices() {
     }) => api.post<{ user: User, workspace: Workspace }>('/setup', body),
   }
 
+  const branding = {
+    get: () => api.get<SystemBranding>('/system/branding'),
+    update: (body: SystemBranding) => api.put<SystemBranding>('/system/branding', body),
+    removeAsset: (kind: 'logo_light' | 'logo_dark' | 'logo_compact' | 'favicon') =>
+      api.del(`/system/branding/assets/${kind}`),
+  }
+
   const workspaces = {
     list: () => api.list<Workspace>('/workspaces'),
     create: (body: { name: string }) => api.post<Workspace>('/workspaces', body),
@@ -66,12 +75,14 @@ export function useServices() {
       api.patch<Workspace>(`/workspaces/${id}`, body),
     remove: (id: string) => api.del(`/workspaces/${id}`),
 
-    members: (id: string) => api.list<Member>(`/workspaces/${id}/members`),
+    members: (id: string, query?: { page?: number, per_page?: number }) =>
+      api.list<Member>(`/workspaces/${id}/members`, query),
     addMember: (id: string, body: { email: string, role: Role }) =>
       api.post<Member>(`/workspaces/${id}/members`, body),
     createInvitation: (id: string, body: { role: Exclude<Role, 'owner'> }) =>
       api.post<WorkspaceInvitation>(`/workspaces/${id}/invitations`, body),
-    invitations: (id: string) => api.list<WorkspaceInvitation>(`/workspaces/${id}/invitations`),
+    invitations: (id: string, query?: { page?: number, per_page?: number }) =>
+      api.list<WorkspaceInvitation>(`/workspaces/${id}/invitations`, query),
     renewInvitation: (id: string, invitationId: string) =>
       api.post<WorkspaceInvitation>(`/workspaces/${id}/invitations/${invitationId}/renew`),
     revokeInvitation: (id: string, invitationId: string) =>
@@ -99,6 +110,7 @@ export function useServices() {
   const links = {
     list: (workspaceId: string, query?: {
       search?: string
+      tag?: string
       status?: string
       domain_id?: string
       cursor?: string
@@ -107,6 +119,12 @@ export function useServices() {
 
     get: (workspaceId: string, id: string) =>
       api.get<Link>(`/workspaces/${workspaceId}/links/${id}`),
+
+    tags: (workspaceId: string) =>
+      api.list<string>(`/workspaces/${workspaceId}/links/tags`),
+
+    auditLog: (workspaceId: string, query?: { page?: number, per_page?: number }) =>
+      api.list<AuditEntry>(`/workspaces/${workspaceId}/links/audit-log`, query),
 
     create: (workspaceId: string, body: {
       destination_url: string
@@ -117,6 +135,7 @@ export function useServices() {
       password?: string
       expires_at?: string
       max_clicks?: number
+      external_reference?: string
       metadata?: Record<string, unknown>
     }) => api.post<Link>(`/workspaces/${workspaceId}/links`, body),
 
@@ -158,5 +177,5 @@ export function useServices() {
       api.del(`/workspaces/${workspaceId}/api-keys/${id}`),
   }
 
-  return { auth, setup, workspaces, domains, links, analytics, apiKeys }
+  return { auth, setup, branding, workspaces, domains, links, analytics, apiKeys }
 }

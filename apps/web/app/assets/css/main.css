@@ -26,6 +26,13 @@
   --color-danger-hover: #b91c1c;
   --color-success: #059669;
   --color-warning: #d97706;
+  --color-shell: #172033;
+  --color-shell-content: #ffffff;
+  --color-shell-accent: #16a34a;
+  --color-shell-content-muted: color-mix(in srgb, var(--color-shell-content) 60%, transparent);
+  --color-shell-content-hover: color-mix(in srgb, var(--color-shell-content) 90%, transparent);
+  --color-shell-border: color-mix(in srgb, var(--color-shell-content) 10%, transparent);
+  --color-shell-hover: color-mix(in srgb, var(--color-shell-content) 6%, transparent);
 }
 
 @layer base {
@@ -50,6 +57,9 @@
     --color-danger-hover: #fca5a5;
     --color-success: #34d399;
     --color-warning: #fbbf24;
+    --color-shell: #080c12;
+    --color-shell-content: #ffffff;
+    --color-shell-accent: #4ade80;
   }
 
   body {
@@ -156,6 +166,20 @@
 
 .mobile-bottom-link.is-active {
   color: var(--color-accent);
+}
+
+.mobile-dashboard-nav .mobile-bottom-link {
+  color: var(--color-shell-content-muted);
+}
+
+.mobile-dashboard-nav .mobile-bottom-link:hover {
+  color: var(--color-shell-content-hover);
+  background-color: var(--color-shell-hover);
+}
+
+.mobile-dashboard-nav .mobile-bottom-link.is-active {
+  color: var(--color-shell-accent);
+  background-color: var(--color-shell-hover);
 }
 
 .bottom-sheet-enter-active,

@@ -6,7 +6,7 @@ import AnalyticsChart from '~/components/analytics/Chart.vue'
 import AnalyticsRangePicker from '~/components/analytics/RangePicker.vue'
 import LinkFormFields from '~/components/links/FormFields.vue'
 import LinkStatusBadge from '~/components/links/StatusBadge.vue'
-import { emptyLinkForm, linkToForm, toRfc3339 } from '~/components/links/form'
+import { emptyLinkForm, linkToForm, normalizeTags, toRfc3339 } from '~/components/links/form'
 import { formatDateTime, formatNumber, truncateMiddle } from '~/components/links/format'
 import { ApiError } from '~/composables/useApi'
 import { useServices } from '~/services'
@@ -31,6 +31,7 @@ useHead({
 })
 
 const allDomains = ref<Domain[]>([])
+const tagSuggestions = ref<string[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
 
@@ -73,12 +74,14 @@ async function load() {
   loading.value = true
   loadError.value = null
   try {
-    const [current, domainList] = await Promise.all([
+    const [current, domainList, savedTags] = await Promise.all([
       links.get(workspaceId, linkId.value),
       domains.list(workspaceId).then(r => r.data).catch(() => [] as Domain[]),
+      links.tags(workspaceId).then(r => r.data).catch(() => [] as string[]),
     ])
     link.value = current
     allDomains.value = domainList
+    tagSuggestions.value = savedTags
     resetForm(current)
   } catch (error) {
     loadError.value = error instanceof ApiError
@@ -113,6 +116,7 @@ const FIELD_KEYS = [
   'domain_id',
   'slug',
   'title',
+  'tags',
   'redirect_type',
   'expires_at',
   'password',
@@ -167,6 +171,23 @@ function buildPatch(): Record<string, unknown> | null {
   if (next.domain_id !== prev.domain_id) patch.domain_id = next.domain_id
 
   if (next.redirect_type !== prev.redirect_type) patch.redirect_type = Number(next.redirect_type)
+
+  if (next.tags !== prev.tags) {
+    const tags = normalizeTags(next.tags)
+    if (tags.length > 8 || tags.some(tag => tag.length > 24)) {
+      errors.value = { tags: 'Use at most 8 tags, with no more than 24 characters each.' }
+      return null
+    }
+    patch.metadata = { ...(link.value?.metadata ?? {}), tags }
+  }
+
+  if (next.notes.trim() !== prev.notes.trim()) {
+    patch.metadata = {
+      ...(link.value?.metadata ?? {}),
+      ...(typeof patch.metadata === 'object' && patch.metadata ? patch.metadata : {}),
+      notes: next.notes.trim(),
+    }
+  }
 
   const title = next.title.trim()
   if (title !== prev.title) patch.title = title === '' ? null : title
@@ -445,6 +466,7 @@ async function confirmDelete() {
             :has-password="link.has_password"
             :advanced-open="advancedOpen"
             :disabled="saving"
+            :tag-suggestions="tagSuggestions"
           />
 
           <div class="flex items-center gap-2">

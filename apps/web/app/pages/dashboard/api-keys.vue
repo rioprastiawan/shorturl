@@ -48,7 +48,7 @@ async function load(cursor: string | null = currentCursor.value): Promise<boolea
   loading.value = true
   loadError.value = null
   try {
-    const res = await apiKeys.list(workspaceId, { cursor: cursor ?? undefined, limit: 25 })
+    const res = await apiKeys.list(workspaceId, { cursor: cursor ?? undefined, limit: 10 })
     keys.value = res.data
     nextCursor.value = res.meta.next_cursor
     return true
@@ -412,17 +412,14 @@ func main() {
                 </UiTableCell>
           </template>
           <template #footer>
-          <div v-if="cursorHistory.length || nextCursor" class="flex items-center justify-between border-t border-(--color-border) px-3 py-2.5">
-            <p class="text-xs text-(--color-content-muted)">Page {{ pageNumber }} · Up to 25 keys per page</p>
-            <div class="flex gap-2">
-              <UiButton variant="secondary" size="sm" :disabled="!cursorHistory.length || loading" @click="previousPage">
-                <Icon name="lucide:chevron-left" size="14" /> Previous
-              </UiButton>
-              <UiButton variant="secondary" size="sm" :disabled="!nextCursor || loading" @click="nextPage">
-                Next <Icon name="lucide:chevron-right" size="14" />
-              </UiButton>
-            </div>
-          </div>
+            <UiCursorPagination
+              :page="pageNumber"
+              :has-next="Boolean(nextCursor)"
+              :loading="loading"
+              :label="`${keys.length} keys shown`"
+              @previous="previousPage"
+              @next="nextPage"
+            />
           </template>
         </UiDataTable>
       </UiCard>

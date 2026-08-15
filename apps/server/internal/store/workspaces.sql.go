@@ -37,6 +37,17 @@ func (q *Queries) AddWorkspaceMember(ctx context.Context, arg AddWorkspaceMember
 	return i, err
 }
 
+const countWorkspaceMembers = `-- name: CountWorkspaceMembers :one
+SELECT count(*) FROM workspace_members WHERE workspace_id = $1
+`
+
+func (q *Queries) CountWorkspaceMembers(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countWorkspaceMembers, workspaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countWorkspacesForUser = `-- name: CountWorkspacesForUser :one
 SELECT count(*) FROM workspace_members WHERE user_id = $1
 `
@@ -159,7 +170,14 @@ ORDER BY
         ELSE 2
     END,
     users.name ASC
+LIMIT $3 OFFSET $2
 `
+
+type ListWorkspaceMembersParams struct {
+	WorkspaceID uuid.UUID
+	PageOffset  int32
+	PageLimit   int32
+}
 
 type ListWorkspaceMembersRow struct {
 	WorkspaceID uuid.UUID
@@ -170,8 +188,8 @@ type ListWorkspaceMembersRow struct {
 	Email       string
 }
 
-func (q *Queries) ListWorkspaceMembers(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceMembersRow, error) {
-	rows, err := q.db.Query(ctx, listWorkspaceMembers, workspaceID)
+func (q *Queries) ListWorkspaceMembers(ctx context.Context, arg ListWorkspaceMembersParams) ([]ListWorkspaceMembersRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceMembers, arg.WorkspaceID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

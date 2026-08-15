@@ -4,7 +4,7 @@ import { ApiError } from '~/composables/useApi'
 import { formatDate } from '~/components/dashboard/format'
 import { useServices } from '~/services'
 
-definePageMeta({ middleware: 'auth' })
+definePageMeta({ middleware: 'auth', alias: '/dashboard/members' })
 
 useHead({ title: 'Members · ShortURL' })
 
@@ -12,14 +12,17 @@ const ws = useWorkspaces()
 const session = useSession()
 const { workspaces } = useServices()
 const toast = useToast()
+const pageSize = 10
+const membersPage = ref(1)
 
 const { data, pending, error, refresh } = await useAsyncData(
   'workspace-members',
-  () => workspaces.members(ws.requireActiveId()),
-  { watch: [ws.activeId] },
+  () => workspaces.members(ws.requireActiveId(), { page: membersPage.value, per_page: pageSize }),
+  { watch: [ws.activeId, membersPage] },
 )
 
 const members = computed(() => data.value?.data ?? [])
+const membersTotal = computed(() => data.value?.meta.total ?? members.value.length)
 const canManage = computed(() => ws.role.value === 'owner' || ws.role.value === 'admin')
 const currentUserId = computed(() => session.user.value?.id ?? null)
 
@@ -53,6 +56,8 @@ const inviteError = ref<string | null>(null)
 const invitationLink = ref('')
 const generatingInvitation = ref(false)
 const invitations = ref<WorkspaceInvitation[]>([])
+const invitationsTotal = ref(0)
+const invitationsPage = ref(1)
 const invitationsLoading = ref(false)
 const invitationActionId = ref<string>()
 
@@ -60,7 +65,9 @@ async function loadInvitations() {
   if (!canManage.value || !ws.activeId.value) return
   invitationsLoading.value = true
   try {
-    invitations.value = (await workspaces.invitations(ws.requireActiveId())).data
+    const response = await workspaces.invitations(ws.requireActiveId(), { page: invitationsPage.value, per_page: pageSize })
+    invitations.value = response.data
+    invitationsTotal.value = response.meta.total ?? response.data.length
   } catch (e) {
     inviteError.value = e instanceof ApiError ? e.message : 'Could not load invitations.'
   } finally {
@@ -68,7 +75,20 @@ async function loadInvitations() {
   }
 }
 
-watch([ws.activeId, canManage], loadInvitations, { immediate: true })
+watch([ws.activeId, canManage, invitationsPage], loadInvitations, { immediate: true })
+
+watch(ws.activeId, () => {
+  membersPage.value = 1
+  invitationsPage.value = 1
+})
+
+watch(membersTotal, (total) => {
+  membersPage.value = Math.min(membersPage.value, Math.max(1, Math.ceil(total / pageSize)))
+})
+
+watch(invitationsTotal, (total) => {
+  invitationsPage.value = Math.min(invitationsPage.value, Math.max(1, Math.ceil(total / pageSize)))
+})
 
 function invitationState(invitation: WorkspaceInvitation) {
   if (invitation.accepted_at) return { label: 'Used', tone: 'neutral' as const }
@@ -292,7 +312,7 @@ async function confirmRemove() {
       </form>
     </UiCard>
 
-    <UiCard v-if="canManage" :title="`Invitations (${invitations.length})`" :padded="false">
+    <UiCard v-if="canManage" :title="`Invitations (${invitationsTotal})`" :padded="false">
       <div v-if="invitationsLoading" class="space-y-4 px-5 py-5" role="status" aria-label="Loading invitations">
         <div v-for="row in 3" :key="row" class="flex items-center justify-between gap-4"><div class="flex-1 space-y-2"><UiSkeleton width="40%" /><UiSkeleton height="0.65rem" width="65%" /></div><UiSkeleton height="2rem" width="5rem" rounded="lg" /></div>
       </div>
@@ -338,9 +358,16 @@ async function confirmRemove() {
           </UiButton>
         </li>
       </ul>
+      <UiPagination
+        v-if="!invitationsLoading"
+        v-model:page="invitationsPage"
+        :total="invitationsTotal"
+        :page-size="pageSize"
+        label="invitations"
+      />
     </UiCard>
 
-    <UiCard :title="`Members (${members.length})`" :padded="false">
+    <UiCard :title="`Members (${membersTotal})`" :padded="false">
       <div v-if="pending && !data" role="status" aria-label="Loading members">
         <UiSkeletonTable :rows="5" :columns="4" />
       </div>
@@ -424,6 +451,13 @@ async function confirmRemove() {
           </div>
         </li>
       </ul>
+      <UiPagination
+        v-if="!pending && !loadError"
+        v-model:page="membersPage"
+        :total="membersTotal"
+        :page-size="pageSize"
+        label="members"
+      />
     </UiCard>
 
     <UiModal

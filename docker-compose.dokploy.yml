@@ -8,6 +8,7 @@ x-logging: &default-logging
 
 x-server-image: &server-image
   image: ${SERVER_IMAGE:?Set SERVER_IMAGE to the GHCR server image}
+  pull_policy: always
 
 services:
   migrate:
@@ -85,6 +86,7 @@ services:
 
   web:
     image: ${WEB_IMAGE:?Set WEB_IMAGE to the GHCR web image}
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       server:

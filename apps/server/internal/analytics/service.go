@@ -168,6 +168,18 @@ func (s *Service) Overview(ctx context.Context, workspaceID uuid.UUID) (Overview
 	if err != nil {
 		return OverviewResponse{}, httpx.Internal(err)
 	}
+	expiringLinks, err := s.q.CountExpiringLinks(ctx, workspaceID)
+	if err != nil {
+		return OverviewResponse{}, httpx.Internal(err)
+	}
+	expiringKeys, err := s.q.CountExpiringAPIKeys(ctx, workspaceID)
+	if err != nil {
+		return OverviewResponse{}, httpx.Internal(err)
+	}
+	domainIssues, err := s.q.CountDomainIssues(ctx, workspaceID)
+	if err != nil {
+		return OverviewResponse{}, httpx.Internal(err)
+	}
 
 	recent, err := s.q.RecentLinks(ctx, store.RecentLinksParams{
 		WorkspaceID: workspaceID,
@@ -197,6 +209,9 @@ func (s *Service) Overview(ctx context.Context, workspaceID uuid.UUID) (Overview
 		TotalClicks:   totals.TotalClicks,
 		ClicksToday:   totals.ClicksToday,
 		ActiveDomains: domains,
+		ExpiringLinks: expiringLinks,
+		ExpiringKeys:  expiringKeys,
+		DomainIssues:  domainIssues,
 		RecentLinks:   links,
 	}, nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/rioprastiawan/shorturl/apps/server/internal/analytics"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/apikey"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/auth"
+	"github.com/rioprastiawan/shorturl/apps/server/internal/branding"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/domain"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/httpx"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/link"
@@ -51,13 +52,14 @@ func (s *Server) routes(version string) http.Handler {
 			// dashboard API there would put an authentication surface on a
 			// hostname the operator thinks only serves redirects.
 			r.Use(s.requireAppHost)
+			r.Get("/system/version", healthHandler(version))
 			s.mountAPI(r)
 		})
 
 		// Anything else is a short link. On a custom domain that is every
 		// path; on the application domain the reserved-slug list keeps links
 		// from shadowing /api, /login, and friends (plan §8, §40).
-		redirectHandler := redirect.NewHandler(s.app.Link, s.app.Producer, s.cfg, s.logger)
+		redirectHandler := redirect.NewHandler(s.app.Link, s.app.Producer, s.app.Branding, s.cfg, s.logger)
 		redirectLimiter := middleware.NewRateLimiter(s.cfg.RateLimitRedirect)
 		r.NotFound(middleware.RateLimit(redirectLimiter, middleware.ByIP)(redirectHandler).ServeHTTP)
 		r.MethodNotAllowed(middleware.RateLimit(redirectLimiter, middleware.ByIP)(redirectHandler).ServeHTTP)
@@ -77,6 +79,7 @@ func (s *Server) mountAPI(r chi.Router) {
 	linkHandler := link.NewHandler(app.Link)
 	analyticsHandler := analytics.NewHandler(app.Analytics)
 	apiKeyHandler := apikey.NewHandler(app.APIKey)
+	brandingHandler := branding.NewHandler(app.Branding)
 	publicHandler := app.PublicAPIHandler()
 
 	authLimiter := middleware.NewRateLimiter(s.cfg.RateLimitAuth)
@@ -87,6 +90,14 @@ func (s *Server) mountAPI(r chi.Router) {
 	// load by the dashboard, so including them would spend a 10-per-minute
 	// budget on ordinary navigation and sign the user out mid-session.
 	guardCredentials := rateLimitCredentials(authLimiter)
+
+	r.Route("/system", func(r chi.Router) {
+		brandingHandler.PublicRoutes(r)
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireAuth(app.Auth))
+			brandingHandler.AdminRoutes(r)
+		})
+	})
 
 	// First-run wizard. Unauthenticated by necessity — there is no account to
 	// authenticate with yet.

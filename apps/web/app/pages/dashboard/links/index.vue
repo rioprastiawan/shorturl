@@ -6,6 +6,7 @@ import { copyText } from '~/components/links/clipboard'
 import { formatDate, formatNumber, truncateMiddle } from '~/components/links/format'
 import { ApiError } from '~/composables/useApi'
 import { useServices } from '~/services'
+import { downloadText, encodeCsv, parseCsv } from '~/utils/csv'
 
 definePageMeta({ middleware: 'auth' })
 
@@ -23,6 +24,8 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const debouncedSearch = ref('')
 const status = ref('')
 const domainId = ref('')
+const tag = ref('')
+const debouncedTag = ref('')
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -32,9 +35,11 @@ const STATUS_OPTIONS = [
 ]
 
 const LINK_COLUMNS = [
+  { key: 'select', label: 'Select', srOnly: true },
   { key: 'short_url', label: 'Short URL' },
   { key: 'destination', label: 'Destination' },
   { key: 'title', label: 'Title' },
+  { key: 'tags', label: 'Tags' },
   { key: 'status', label: 'Status' },
   { key: 'clicks', label: 'Clicks', align: 'right' as const },
   { key: 'created', label: 'Created' },
@@ -43,22 +48,30 @@ const LINK_COLUMNS = [
 
 // Debounced so typing "newsletter" is one request, not ten.
 let searchTimer: ReturnType<typeof setTimeout> | undefined
+let tagTimer: ReturnType<typeof setTimeout> | undefined
 watch(search, (value) => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => (debouncedSearch.value = value.trim()), 300)
 })
+watch(tag, (value) => {
+  clearTimeout(tagTimer)
+  tagTimer = setTimeout(() => (debouncedTag.value = value.trim().toLowerCase()), 300)
+})
 onBeforeUnmount(() => {
   clearTimeout(searchTimer)
+  clearTimeout(tagTimer)
 })
 
 const filtersActive = computed(() =>
-  Boolean(debouncedSearch.value || status.value || domainId.value))
+  Boolean(debouncedSearch.value || debouncedTag.value || status.value || domainId.value))
 
 function clearFilters() {
   search.value = ''
   debouncedSearch.value = ''
   status.value = ''
   domainId.value = ''
+  tag.value = ''
+  debouncedTag.value = ''
 }
 
 function previewOf(link: Link): PagePreview | null {
@@ -71,20 +84,187 @@ function previewOf(link: Link): PagePreview | null {
 
 const items = ref<Link[]>([])
 const nextCursor = ref<string | null>(null)
+const cursorHistory = ref<(string | null)[]>([null])
+const currentPage = ref(1)
 const pending = ref(true)
-const loadingMore = ref(false)
 const loadError = ref<string | null>(null)
 const domainOptions = ref<Domain[]>([])
+const savedTagOptions = ref<string[]>([])
+const selectedIds = ref<string[]>([])
+const bulkBusy = ref(false)
+const bulkConfirm = ref<'disable' | 'archive' | 'delete' | null>(null)
+const bulkTagsOpen = ref(false)
+const bulkTags = ref('')
+const allPageSelected = computed(() => items.value.length > 0 && items.value.every(item => selectedIds.value.includes(item.id)))
 const domainFilterOptions = computed(() => [
   { value: '', label: 'All domains' },
   ...domainOptions.value.map(domain => ({ value: domain.id, label: domain.hostname })),
 ])
 
+// ---------------------------------------------------------- import / export
+
+interface ImportRow {
+  line: number
+  values: Record<string, string>
+  error?: string
+}
+
+interface ImportFailure {
+  line: number
+  message: string
+}
+
+const importInput = ref<HTMLInputElement | null>(null)
+const importOpen = ref(false)
+const importRows = ref<ImportRow[]>([])
+const importFileName = ref('')
+const importing = ref(false)
+const importedCount = ref(0)
+const importFailures = ref<ImportFailure[]>([])
+const exporting = ref(false)
+const validImportRows = computed(() => importRows.value.filter(row => !row.error))
+
+function importError(values: Record<string, string>): string | undefined {
+  const destinationUrl = values.destination_url ?? ''
+  const hostname = values.domain ?? ''
+  if (!destinationUrl) return 'destination_url is required'
+  try {
+    const destination = new URL(destinationUrl)
+    if (!['http:', 'https:'].includes(destination.protocol)) return 'destination_url must use http or https'
+  } catch { return 'destination_url is not a valid URL' }
+
+  if (hostname && !domainOptions.value.some(domain => domain.hostname.toLowerCase() === hostname.toLowerCase())) {
+    return `domain ${hostname} is not active in this workspace`
+  }
+  if (values.status && !['active', 'disabled', 'archived'].includes(values.status)) return 'status must be active, disabled, or archived'
+  if (values.redirect_type && !['301', '302', '307', '308'].includes(values.redirect_type)) return 'redirect_type must be 301, 302, 307, or 308'
+  if (values.expires_at && Number.isNaN(Date.parse(values.expires_at))) return 'expires_at must be an ISO date and time'
+  if (values.max_clicks) {
+    const limit = Number(values.max_clicks)
+    if (!Number.isInteger(limit) || limit <= 0) return 'max_clicks must be a positive integer'
+  }
+}
+
+async function chooseImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (file.size > 1024 * 1024) {
+    toast.error('CSV files are limited to 1 MB.')
+    return
+  }
+
+  try {
+    const parsed = parseCsv(await file.text())
+    if (parsed.length < 2) throw new Error('The CSV has no data rows.')
+    const headers = parsed[0]!.map(header => header.trim().toLowerCase())
+    if (!headers.includes('destination_url')) throw new Error('The CSV must contain a destination_url column.')
+    if (parsed.length > 1001) throw new Error('A single import is limited to 1,000 links.')
+
+    importRows.value = parsed.slice(1).map((cells, index) => {
+      const values = Object.fromEntries(headers.map((header, cell) => [header, cells[cell]?.trim() ?? '']))
+      return { line: index + 2, values, error: importError(values) }
+    })
+    importFileName.value = file.name
+    importFailures.value = []
+    importedCount.value = 0
+    importOpen.value = true
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : 'Could not read the CSV file.')
+  }
+}
+
+async function runImport() {
+  const workspaceId = ws.activeId.value
+  if (!workspaceId || importing.value || !validImportRows.value.length) return
+  importing.value = true
+  importedCount.value = 0
+  importFailures.value = importRows.value.filter(row => row.error).map(row => ({ line: row.line, message: row.error! }))
+
+  for (const row of validImportRows.value) {
+    const value = row.values
+    const hostname = value.domain ?? ''
+    const selectedDomain = hostname
+      ? domainOptions.value.find(domain => domain.hostname.toLowerCase() === hostname.toLowerCase())
+      : undefined
+    const tags = (value.tags ?? '').split('|').map(tag => tag.trim().toLowerCase()).filter(Boolean)
+    const metadata: Record<string, unknown> = {}
+    if (tags.length) metadata.tags = [...new Set(tags)].slice(0, 8)
+    if (value.notes) metadata.notes = value.notes
+
+    try {
+      const created = await links.create(workspaceId, {
+        destination_url: value.destination_url!,
+        domain_id: selectedDomain?.id,
+        slug: value.slug || undefined,
+        title: value.title || undefined,
+        redirect_type: value.redirect_type ? Number(value.redirect_type) : undefined,
+        expires_at: value.expires_at ? new Date(value.expires_at).toISOString() : undefined,
+        max_clicks: value.max_clicks ? Number(value.max_clicks) : undefined,
+        external_reference: value.external_reference || undefined,
+        metadata: Object.keys(metadata).length ? metadata : undefined,
+      })
+      if (value.status && value.status !== 'active') {
+        await links.update(workspaceId, created.id, { status: value.status })
+      }
+      importedCount.value++
+    } catch (error) {
+      importFailures.value.push({ line: row.line, message: error instanceof ApiError ? error.message : 'Could not create link' })
+    }
+  }
+
+  importing.value = false
+  await Promise.all([load(), loadDomains()])
+  if (!importFailures.value.length) toast.success(`${importedCount.value} links imported`)
+}
+
+async function exportCsv() {
+  const workspaceId = ws.activeId.value
+  if (!workspaceId || exporting.value) return
+  exporting.value = true
+  try {
+    const exported: Link[] = []
+    let cursor: string | undefined
+    do {
+      const response = await links.list(workspaceId, {
+        search: debouncedSearch.value || undefined,
+        tag: debouncedTag.value || undefined,
+        status: status.value || undefined,
+        domain_id: domainId.value || undefined,
+        cursor,
+        limit: 100,
+      })
+      exported.push(...response.data)
+      cursor = response.meta?.next_cursor ?? undefined
+    } while (cursor)
+
+    const rows: Array<Array<string | number | null | undefined>> = [[
+      'short_url', 'domain', 'slug', 'destination_url', 'title', 'status', 'redirect_type',
+      'expires_at', 'max_clicks', 'external_reference', 'tags', 'notes', 'click_count', 'created_at',
+    ]]
+    for (const link of exported) {
+      rows.push([
+        link.short_url, link.domain, link.slug, link.destination_url, link.title, link.status,
+        link.redirect_type, link.expires_at, link.max_clicks, link.external_reference,
+        link.metadata?.tags?.join('|'), typeof link.metadata?.notes === 'string' ? link.metadata.notes : '',
+        link.click_count, link.created_at,
+      ])
+    }
+    downloadText(`shorturl-links-${new Date().toISOString().slice(0, 10)}.csv`, encodeCsv(rows))
+    toast.success(`${exported.length} links exported`)
+  } catch (error) {
+    toast.error(error instanceof ApiError ? error.message : 'Could not export links.')
+  } finally {
+    exporting.value = false
+  }
+}
+
 // A stale response from a filter the user has already changed must not
 // overwrite the current one, so every load carries a token.
 let requestToken = 0
 
-async function load(more = false) {
+async function load(cursor: string | null = cursorHistory.value[currentPage.value - 1] ?? null) {
   const workspaceId = ws.activeId.value
   if (!workspaceId) {
     items.value = []
@@ -93,35 +273,85 @@ async function load(more = false) {
   }
 
   const token = ++requestToken
-  if (more) loadingMore.value = true
-  else {
-    pending.value = true
-    loadError.value = null
-  }
+  pending.value = true
+  loadError.value = null
 
   try {
     const res = await links.list(workspaceId, {
       search: debouncedSearch.value || undefined,
+      tag: debouncedTag.value || undefined,
       status: status.value || undefined,
       domain_id: domainId.value || undefined,
-      cursor: more ? (nextCursor.value ?? undefined) : undefined,
+      cursor: cursor ?? undefined,
+      limit: 10,
     })
     if (token !== requestToken) return
-    items.value = more ? [...items.value, ...res.data] : res.data
-    // Keyset pagination: the cursor is the only way forward, there is no
-    // page count to render.
+    items.value = res.data
+    selectedIds.value = []
     nextCursor.value = res.meta?.next_cursor ?? null
   } catch (error) {
     if (token !== requestToken) return
     const message = error instanceof ApiError ? error.message : 'Could not load links.'
-    if (more) toast.error(message)
-    else loadError.value = message
+    loadError.value = message
   } finally {
     if (token === requestToken) {
       pending.value = false
-      loadingMore.value = false
     }
   }
+}
+
+function togglePageSelection() {
+  selectedIds.value = allPageSelected.value ? [] : items.value.map(item => item.id)
+}
+
+async function runBulk(action: 'enable' | 'disable' | 'archive' | 'delete' | 'tags') {
+  const workspaceId = ws.activeId.value
+  const selected = items.value.filter(item => selectedIds.value.includes(item.id))
+  if (!workspaceId || !selected.length || bulkBusy.value) return
+  bulkBusy.value = true
+  try {
+    if (action === 'delete') {
+      await Promise.all(selected.map(item => links.remove(workspaceId, item.id)))
+    } else if (action === 'tags') {
+      const additions = bulkTags.value.split(',').map(value => value.trim().toLowerCase()).filter(Boolean)
+      await Promise.all(selected.map(item => links.update(workspaceId, item.id, {
+        metadata: {
+          ...(item.metadata ?? {}),
+          tags: [...new Set([...(item.metadata?.tags ?? []), ...additions])].slice(0, 8),
+        },
+      })))
+    } else {
+      const nextStatus = action === 'enable' ? 'active' : action === 'disable' ? 'disabled' : 'archived'
+      await Promise.all(selected.map(item => links.update(workspaceId, item.id, { status: nextStatus })))
+    }
+    toast.success(`${selected.length} link${selected.length === 1 ? '' : 's'} updated`)
+    bulkConfirm.value = null
+    bulkTagsOpen.value = false
+    bulkTags.value = ''
+    await load()
+  } catch (error) {
+    toast.error(error instanceof ApiError ? error.message : 'Could not update the selected links.')
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+function resetPagination() {
+  currentPage.value = 1
+  cursorHistory.value = [null]
+}
+
+async function nextPage() {
+  if (!nextCursor.value || pending.value) return
+  cursorHistory.value[currentPage.value] = nextCursor.value
+  currentPage.value += 1
+  await load(nextCursor.value)
+}
+
+async function previousPage() {
+  if (currentPage.value <= 1 || pending.value) return
+  currentPage.value -= 1
+  await load(cursorHistory.value[currentPage.value - 1] ?? null)
 }
 
 async function loadDomains() {
@@ -131,8 +361,12 @@ async function loadDomains() {
     return
   }
   try {
-    const res = await domains.list(workspaceId)
+    const [res, savedTags] = await Promise.all([
+      domains.list(workspaceId),
+      links.tags(workspaceId).catch(() => ({ data: [] as string[] })),
+    ])
     domainOptions.value = res.data.filter(d => d.status === 'active')
+    savedTagOptions.value = savedTags.data
   } catch {
     // The filter is a convenience; losing it must not break the page.
     domainOptions.value = []
@@ -144,7 +378,10 @@ watch(() => ws.activeId.value, () => {
   loadDomains()
 }, { immediate: true })
 
-watch([() => ws.activeId.value, debouncedSearch, status, domainId], () => load(), {
+watch([() => ws.activeId.value, debouncedSearch, debouncedTag, status, domainId], () => {
+  resetPagination()
+  load()
+}, {
   immediate: true,
 })
 
@@ -161,6 +398,8 @@ const deleteOpen = ref(false)
 const deleting = ref(false)
 const qrTarget = ref<Link | null>(null)
 const qrOpen = ref(false)
+const disableTarget = ref<Link | null>(null)
+const togglingId = ref<string | null>(null)
 
 function showQr(link: Link) {
   qrTarget.value = link
@@ -172,6 +411,35 @@ function askDelete(link: Link) {
   deleteOpen.value = true
 }
 
+async function requestStatusToggle(link: Link) {
+  if (link.status === 'active') {
+    disableTarget.value = link
+    return
+  }
+  await setLinkStatus(link, 'active')
+}
+
+async function setLinkStatus(link: Link, next: 'active' | 'disabled') {
+  const workspaceId = ws.activeId.value
+  if (!workspaceId || togglingId.value) return
+  togglingId.value = link.id
+  try {
+    const updated = await links.update(workspaceId, link.id, { status: next })
+    const index = items.value.findIndex(item => item.id === link.id)
+    if (status.value && status.value !== updated.status) {
+      if (index >= 0) items.value.splice(index, 1)
+    } else if (index >= 0) {
+      items.value[index] = updated
+    }
+    disableTarget.value = null
+    toast.success(next === 'active' ? 'Link enabled' : 'Link disabled')
+  } catch (error) {
+    toast.error(error instanceof ApiError ? error.message : 'Could not change the link status.')
+  } finally {
+    togglingId.value = null
+  }
+}
+
 async function confirmDelete() {
   const target = deleteTarget.value
   const workspaceId = ws.activeId.value
@@ -180,7 +448,11 @@ async function confirmDelete() {
   deleting.value = true
   try {
     await links.remove(workspaceId, target.id)
-    items.value = items.value.filter(l => l.id !== target.id)
+    if (items.value.length === 1 && currentPage.value > 1) {
+      await previousPage()
+    } else {
+      await load()
+    }
     toast.success(`Deleted ${target.short_url}`)
     deleteOpen.value = false
     deleteTarget.value = null
@@ -204,9 +476,18 @@ async function confirmDelete() {
           Create, organize, and track every short link in one place.
         </p>
       </div>
-      <UiButton @click="createLinkModal.show()">
-        <Icon name="lucide:plus" size="17" /> Create short link
-      </UiButton>
+      <div class="flex flex-wrap items-center gap-2">
+        <input ref="importInput" type="file" accept=".csv,text/csv" class="hidden" @change="chooseImportFile">
+        <UiButton variant="secondary" :disabled="importing" @click="importInput?.click()">
+          <Icon name="lucide:upload" size="16" /> Import CSV
+        </UiButton>
+        <UiButton variant="secondary" :loading="exporting" @click="exportCsv">
+          <Icon name="lucide:download" size="16" /> Export CSV
+        </UiButton>
+        <UiButton @click="createLinkModal.show()">
+          <Icon name="lucide:plus" size="17" /> Create short link
+        </UiButton>
+      </div>
     </header>
 
     <!-- Search and filters are one control surface: search is the primary
@@ -267,6 +548,16 @@ async function confirmDelete() {
             size="sm"
             class="min-w-40 flex-1 sm:w-52 sm:flex-none"
           />
+          <div class="relative min-w-36 flex-1 sm:w-44 sm:flex-none">
+            <Icon name="lucide:tag" size="14" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-(--color-content-subtle)" />
+            <input
+              v-model="tag"
+              type="search"
+              aria-label="Filter by tag"
+              placeholder="Filter tag"
+              class="h-8 w-full rounded-md border border-(--color-border) bg-(--color-surface-raised) pl-8 pr-2 text-xs outline-none focus:border-(--color-accent)"
+            >
+          </div>
           <button
             v-if="filtersActive"
             type="button"
@@ -314,8 +605,27 @@ async function confirmDelete() {
         </UiButton>
       </UiEmptyState>
 
-      <UiDataTable v-else :columns="LINK_COLUMNS" :rows="items" row-key="id">
+      <div v-if="items.length" class="flex flex-wrap items-center gap-2 border-b border-(--color-border) bg-(--color-surface-muted)/35 px-4 py-2.5">
+        <UiButton variant="ghost" size="sm" :disabled="bulkBusy" @click="togglePageSelection">
+          {{ allPageSelected ? 'Clear selection' : 'Select page' }}
+        </UiButton>
+        <template v-if="selectedIds.length">
+          <span class="mr-1 text-xs font-semibold text-(--color-content-muted)">{{ selectedIds.length }} selected</span>
+          <UiButton variant="secondary" size="sm" :disabled="bulkBusy" @click="runBulk('enable')">Enable</UiButton>
+          <UiButton variant="secondary" size="sm" :disabled="bulkBusy" @click="bulkConfirm = 'disable'">Disable</UiButton>
+          <UiButton variant="secondary" size="sm" :disabled="bulkBusy" @click="bulkTagsOpen = true">Add tags</UiButton>
+          <UiButton variant="secondary" size="sm" :disabled="bulkBusy" @click="bulkConfirm = 'archive'">Archive</UiButton>
+          <UiButton variant="ghost" size="sm" :disabled="bulkBusy" @click="bulkConfirm = 'delete'">
+            <span class="text-(--color-danger)">Delete</span>
+          </UiButton>
+        </template>
+      </div>
+
+      <UiDataTable v-if="items.length" :columns="LINK_COLUMNS" :rows="items" row-key="id">
         <template #row="{ row: link }">
+              <UiTableCell>
+                <UiCheckbox v-model="selectedIds" :value="link.id"><span class="sr-only">Select {{ link.short_url }}</span></UiCheckbox>
+              </UiTableCell>
               <UiTableCell>
                 <div class="flex items-center gap-1">
                   <LinkPreviewCard
@@ -352,6 +662,21 @@ async function confirmDelete() {
                 <span v-else class="text-(--color-content-subtle)">—</span>
               </UiTableCell>
               <UiTableCell>
+                <div v-if="link.metadata?.tags?.length" class="flex max-w-52 flex-wrap gap-1">
+                  <button
+                    v-for="linkTag in link.metadata.tags.slice(0, 3)"
+                    :key="linkTag"
+                    type="button"
+                    class="rounded-full bg-(--color-accent)/10 px-2 py-0.5 text-[11px] font-medium text-(--color-accent) hover:bg-(--color-accent)/20"
+                    @click="tag = linkTag"
+                  >
+                    {{ linkTag }}
+                  </button>
+                  <span v-if="link.metadata.tags.length > 3" class="text-[11px] text-(--color-content-muted)">+{{ link.metadata.tags.length - 3 }}</span>
+                </div>
+                <span v-else class="text-(--color-content-subtle)">—</span>
+              </UiTableCell>
+              <UiTableCell>
                 <LinkStatusBadge :status="link.status" />
               </UiTableCell>
               <UiTableCell align="right" class="tabular-nums">
@@ -363,21 +688,112 @@ async function confirmDelete() {
               <UiTableCell align="right">
                 <LinkRowActions
                   :link-id="link.id"
+                  :status="link.status"
+                  :disabled="togglingId === link.id"
                   @copy="copyShortUrl(link)"
                   @qr="showQr(link)"
+                  @toggle="requestStatusToggle(link)"
                   @delete="askDelete(link)"
                 />
               </UiTableCell>
         </template>
         <template #footer>
-        <div v-if="nextCursor" class="flex justify-center border-t border-(--color-border) px-5 py-4">
-          <UiButton variant="secondary" :loading="loadingMore" @click="load(true)">
-            Load more
-          </UiButton>
-        </div>
+          <UiCursorPagination
+            :page="currentPage"
+            :has-next="Boolean(nextCursor)"
+            :loading="pending"
+            :label="`${items.length} links shown`"
+            @previous="previousPage"
+            @next="nextPage"
+          />
         </template>
       </UiDataTable>
     </UiCard>
+
+    <UiModal
+      v-model="importOpen"
+      title="Import links from CSV"
+      :description="`${importFileName} · ${importRows.length} data rows`"
+      size="lg"
+    >
+      <div class="space-y-4">
+        <div class="grid grid-cols-3 gap-3 text-center">
+          <div class="rounded-lg bg-(--color-surface-muted) p-3"><p class="text-xl font-bold">{{ importRows.length }}</p><p class="text-xs text-(--color-content-muted)">Rows</p></div>
+          <div class="rounded-lg bg-emerald-500/8 p-3"><p class="text-xl font-bold text-(--color-success)">{{ importedCount || validImportRows.length }}</p><p class="text-xs text-(--color-content-muted)">{{ importedCount ? 'Imported' : 'Ready' }}</p></div>
+          <div class="rounded-lg bg-red-500/8 p-3"><p class="text-xl font-bold text-(--color-danger)">{{ importFailures.length || importRows.length - validImportRows.length }}</p><p class="text-xs text-(--color-content-muted)">Failed</p></div>
+        </div>
+        <div v-if="importFailures.length || importRows.some(row => row.error)" class="max-h-56 overflow-y-auto rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+          <p class="mb-2 text-sm font-semibold text-(--color-danger)">Rows requiring attention</p>
+          <ul class="space-y-1 text-xs">
+            <li v-for="failure in (importFailures.length ? importFailures : importRows.filter(row => row.error).map(row => ({ line: row.line, message: row.error! })))" :key="`${failure.line}-${failure.message}`">
+              <strong>Line {{ failure.line }}:</strong> {{ failure.message }}
+            </li>
+          </ul>
+        </div>
+        <p class="text-xs text-(--color-content-muted)">Required column: <code>destination_url</code>. Optional columns: <code>domain</code>, <code>slug</code>, <code>title</code>, <code>status</code>, <code>redirect_type</code>, <code>expires_at</code>, <code>max_clicks</code>, <code>external_reference</code>, <code>tags</code>, and <code>notes</code>. Separate tags with <code>|</code>.</p>
+      </div>
+      <template #actions>
+        <UiButton variant="secondary" :disabled="importing" @click="importOpen = false">Close</UiButton>
+        <UiButton :loading="importing" :disabled="!validImportRows.length || importedCount > 0" @click="runImport">Import {{ validImportRows.length }} links</UiButton>
+      </template>
+    </UiModal>
+
+    <UiModal
+      :model-value="bulkConfirm !== null"
+      :title="bulkConfirm === 'delete' ? 'Delete selected links?' : bulkConfirm === 'archive' ? 'Archive selected links?' : 'Disable selected links?'"
+      :description="`${selectedIds.length} selected link${selectedIds.length === 1 ? '' : 's'} will be affected.`"
+      :danger="bulkConfirm === 'delete'"
+      @update:model-value="open => { if (!open) bulkConfirm = null }"
+    >
+      <p class="text-sm text-(--color-content-muted)">
+        {{ bulkConfirm === 'delete' ? 'Deleted links and their analytics cannot be recovered.' : 'You can change their status again later.' }}
+      </p>
+      <template #actions>
+        <UiButton variant="secondary" :disabled="bulkBusy" @click="bulkConfirm = null">Cancel</UiButton>
+        <UiButton
+          :variant="bulkConfirm === 'delete' ? 'danger' : 'primary'"
+          :loading="bulkBusy"
+          @click="bulkConfirm && runBulk(bulkConfirm)"
+        >
+          {{ bulkConfirm === 'delete' ? 'Delete links' : bulkConfirm === 'archive' ? 'Archive links' : 'Disable links' }}
+        </UiButton>
+      </template>
+    </UiModal>
+
+    <UiModal
+      v-model="bulkTagsOpen"
+      title="Add tags to selected links"
+      :description="`Existing tags are kept for all ${selectedIds.length} selected links.`"
+    >
+      <LinksTagInput v-model="bulkTags" :suggestions="savedTagOptions" />
+      <template #actions>
+        <UiButton variant="secondary" :disabled="bulkBusy" @click="bulkTagsOpen = false">Cancel</UiButton>
+        <UiButton :loading="bulkBusy" :disabled="!bulkTags" @click="runBulk('tags')">Add tags</UiButton>
+      </template>
+    </UiModal>
+
+    <UiModal
+      :model-value="disableTarget !== null"
+      title="Disable this link?"
+      description="The short URL will stop redirecting until you enable it again. Its settings and analytics will be kept."
+      @update:model-value="open => { if (!open) disableTarget = null }"
+    >
+      <p v-if="disableTarget" class="rounded-md bg-(--color-surface-muted) px-3 py-2 font-mono text-xs">
+        {{ disableTarget.short_url }}
+      </p>
+      <template #actions>
+        <UiButton variant="secondary" :disabled="Boolean(togglingId)" @click="disableTarget = null">
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="danger"
+          :loading="togglingId === disableTarget?.id"
+          @click="disableTarget && setLinkStatus(disableTarget, 'disabled')"
+        >
+          Disable link
+        </UiButton>
+      </template>
+    </UiModal>
 
     <UiModal
       v-model="deleteOpen"

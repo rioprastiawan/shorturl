@@ -1,3 +1,8 @@
+<script setup lang="ts">
+useCustomThemes()
+useBranding()
+</script>
+
 <template>
   <!-- NuxtLayout is required for `definePageMeta({ layout })` to have any
        effect. Without it Nuxt renders the page bare: no sidebar, and none of

@@ -29,9 +29,33 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/", h.list)
 	r.Post("/", h.create)
 	r.Post("/preview", h.preview)
+	r.Get("/tags", h.listTags)
+	r.Get("/audit-log", h.listAuditLog)
 	r.Get("/{linkId}", h.get)
 	r.Patch("/{linkId}", h.update)
 	r.Delete("/{linkId}", h.delete)
+}
+
+func (h *Handler) listAuditLog(w http.ResponseWriter, r *http.Request) {
+	m := authctx.MustMembership(r.Context())
+	page := httpx.QueryInt(r, "page", 1, 1, 1_000_000)
+	perPage := httpx.QueryInt(r, "per_page", 25, 1, 100)
+	items, total, err := h.svc.ListAuditLog(r.Context(), m.WorkspaceID, perPage, (page-1)*perPage)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.List(w, items, httpx.Meta{Total: &total})
+}
+
+func (h *Handler) listTags(w http.ResponseWriter, r *http.Request) {
+	m := authctx.MustMembership(r.Context())
+	tags, err := h.svc.ListTags(r.Context(), m.WorkspaceID)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.List(w, tags, httpx.Meta{})
 }
 
 type previewRequest struct {
@@ -180,6 +204,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	in := ListInput{
 		WorkspaceID:       m.WorkspaceID,
 		Search:            r.URL.Query().Get("search"),
+		Tag:               r.URL.Query().Get("tag"),
 		Status:            r.URL.Query().Get("status"),
 		ExternalReference: r.URL.Query().Get("external_reference"),
 		Cursor:            r.URL.Query().Get("cursor"),
@@ -236,6 +261,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, "link.created", view.Link.ID, view.ShortURL(), nil)
 	httpx.Data(w, http.StatusCreated, ToDTO(view))
 }
 
@@ -284,6 +310,12 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	user := authctx.MustUser(r.Context())
+	action := "link.updated"
+	if in.Status != nil {
+		action = "link." + *in.Status
+	}
+	h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, action, view.Link.ID, view.ShortURL(), nil)
 	httpx.Data(w, http.StatusOK, ToDTO(view))
 }
 
@@ -300,10 +332,17 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	before, err := h.svc.Get(r.Context(), m.WorkspaceID, id)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
 	if err := h.svc.Delete(r.Context(), m.WorkspaceID, id); err != nil {
 		httpx.Error(w, r, err)
 		return
 	}
+	user := authctx.MustUser(r.Context())
+	h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, "link.deleted", id, before.ShortURL(), nil)
 	httpx.NoContent(w)
 }
 

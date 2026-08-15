@@ -16,6 +16,8 @@ type Handler struct {
 	svc *Service
 }
 
+const memberListPageSize = 10
+
 // NewHandler builds the workspace handler.
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
@@ -51,12 +53,14 @@ func (h *Handler) listInvitations(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, httpx.ErrForbidden)
 		return
 	}
-	items, err := h.svc.ListInvitations(r.Context(), m.WorkspaceID)
+	page := httpx.QueryInt(r, "page", 1, 1, 1_000_000)
+	perPage := httpx.QueryInt(r, "per_page", memberListPageSize, 1, 100)
+	items, total, err := h.svc.ListInvitations(r.Context(), m.WorkspaceID, perPage, (page-1)*perPage)
 	if err != nil {
 		httpx.Error(w, r, err)
 		return
 	}
-	httpx.List(w, items, httpx.Meta{})
+	httpx.List(w, items, httpx.Meta{Total: &total})
 }
 
 func (h *Handler) invitationID(w http.ResponseWriter, r *http.Request) (authctx.Membership, uuid.UUID, bool) {
@@ -257,7 +261,9 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listMembers(w http.ResponseWriter, r *http.Request) {
 	m := authctx.MustMembership(r.Context())
 
-	members, err := h.svc.ListMembers(r.Context(), m.WorkspaceID)
+	page := httpx.QueryInt(r, "page", 1, 1, 1_000_000)
+	perPage := httpx.QueryInt(r, "per_page", memberListPageSize, 1, 100)
+	members, total, err := h.svc.ListMembers(r.Context(), m.WorkspaceID, perPage, (page-1)*perPage)
 	if err != nil {
 		httpx.Error(w, r, err)
 		return
@@ -267,7 +273,7 @@ func (h *Handler) listMembers(w http.ResponseWriter, r *http.Request) {
 	for _, member := range members {
 		out = append(out, NewMemberDTO(member))
 	}
-	httpx.List(w, out, httpx.Meta{})
+	httpx.List(w, out, httpx.Meta{Total: &total})
 }
 
 func (h *Handler) addMember(w http.ResponseWriter, r *http.Request) {

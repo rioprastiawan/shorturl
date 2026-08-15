@@ -18,9 +18,9 @@ export function useDashboardShortcuts() {
     l: '/dashboard/links',
     a: '/dashboard/analytics',
     d: '/dashboard/domains',
-    m: '/dashboard/members',
+    m: '/dashboard/workspace/members',
     i: '/dashboard/api-keys',
-    s: '/dashboard/workspace-settings',
+    s: '/dashboard/workspace/settings',
     p: '/dashboard/account-settings',
   }
 

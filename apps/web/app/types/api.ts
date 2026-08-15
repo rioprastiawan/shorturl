@@ -126,6 +126,8 @@ export interface PagePreview {
 
 export interface LinkMetadata extends Record<string, unknown> {
   preview?: PagePreview
+  tags?: string[]
+  notes?: string
 }
 
 export interface ApiKey {
@@ -150,7 +152,50 @@ export interface Overview {
   total_clicks: number
   clicks_today: number
   active_domains: number
+  expiring_links: number
+  expiring_api_keys: number
+  domain_issues: number
   recent_links: Link[]
+}
+
+export interface AuditEntry {
+  id: string
+  action: string
+  entity_type: string
+  entity_id: string | null
+  entity_label: string | null
+  actor_name: string | null
+  actor_email: string | null
+  details: Record<string, unknown>
+  created_at: string
+}
+
+export interface SystemBranding {
+  app_name: string
+  organization_name: string
+  tagline: string
+  login_heading: string
+  login_description: string
+  footer_text: string
+  support_email: string
+  support_url: string
+  documentation_url: string
+  privacy_url: string
+  terms_url: string
+  primary_color: string
+  shell_color: string
+  show_powered_by: boolean
+  logo_light_url: string
+  logo_dark_url: string
+  logo_compact_url: string
+  favicon_url: string
+  qr_foreground: string
+  qr_background: string
+  qr_style: 'square' | 'rounded' | 'dots' | 'extra-rounded' | 'diamond' | 'classy' | 'classy-rounded' | 'soft' | 'star'
+  qr_corner_style: 'square' | 'rounded' | 'circle' | 'dot' | 'leaf'
+  qr_margin: number
+  qr_size: 512 | 1024 | 2048
+  qr_use_logo: boolean
 }
 
 export interface SeriesPoint {
@@ -184,6 +229,8 @@ export type AnalyticsRange = '24h' | '7d' | '30d' | '90d' | '1y' | '5y' | 'custo
 export interface ClicksReport {
   range: AnalyticsRange
   granularity: 'hour' | 'day' | 'week'
+  from: string
+  to: string
   series: SeriesPoint[]
   summary: ClickSummary
   top_links: TopLink[]

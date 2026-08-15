@@ -28,9 +28,10 @@ verified against a running stack.
 sqlc-generated query layer) and 5,615 lines across 49 Vue/TypeScript files.
 **Tests:** 427 Go test cases across 15 packages.
 
-The dashboard implements all 13 pages from §15: setup wizard, login, register,
-overview, links (list / create / detail), analytics, domains, members, API keys,
-settings.
+The dashboard originally implemented all 13 pages from §15. It now also
+includes workspace activity, system version/update information, appearance and
+branding controls, QR branding, bulk link actions, CSV import/export, and an
+authenticated API documentation viewer.
 
 ---
 
@@ -249,9 +250,10 @@ Honest list of what is not done or not proven.
    raw log — the one query the design rules out. Adding them means a `link_id`
    column on the dimension rollup.
 
-7. **`/docs/api` is not mounted.** The OpenAPI spec exists at
-   `docs/openapi.yaml`; §14.11's interactive viewer is not served. The path is
-   reserved in the slug list, so it stays free.
+7. **There is no unauthenticated `/docs/api` route.** The OpenAPI spec is
+   available in the repository and through the authenticated dashboard at
+   `/dashboard/api-docs`; a public documentation route remains intentionally
+   unmounted.
 
 8. **A poison event fails its whole batch.** One event referencing a deleted
    link fails the `CopyFrom` for up to 255 good events alongside it. Redelivery

@@ -2,9 +2,9 @@ export type Language = 'en' | 'id'
 
 const messages = {
   en: {
-    workspace: 'Workspace', manage: 'Manage', developer: 'Developer', system: 'System',
-    overview: 'Overview', links: 'Links', analytics: 'Analytics', domains: 'Domains',
-    members: 'Team members', api: 'API keys', apiDocs: 'API documentation', settings: 'Settings', profile: 'Profile',
+    general: 'General', workspace: 'Workspace', manage: 'Manage', developer: 'Developer', system: 'System',
+    overview: 'Overview', links: 'Links', analytics: 'Analytics', domains: 'Domains', appearancePage: 'Appearance',
+    members: 'Team members', activity: 'Activity log', whitelabeling: 'Whitelabeling', qrBranding: 'QR Branding', api: 'API keys', apiDocs: 'API documentation', settings: 'Settings', profile: 'Profile',
     workspaceSettings: 'Workspace settings', accountSettings: 'Account settings',
     currentWorkspace: 'Current workspace', appearance: 'Appearance', signOut: 'Sign out',
     light: 'Light', dark: 'Dark', systemMode: 'System',
@@ -13,9 +13,9 @@ const messages = {
     savePreferences: 'Save preferences', preferencesSaved: 'Preferences saved',
   },
   id: {
-    workspace: 'Ruang kerja', manage: 'Kelola', developer: 'Pengembang', system: 'Sistem',
-    overview: 'Ringkasan', links: 'Tautan', analytics: 'Analitik', domains: 'Domain',
-    members: 'Anggota tim', api: 'API key', apiDocs: 'Dokumentasi API', settings: 'Pengaturan', profile: 'Profil',
+    general: 'Umum', workspace: 'Ruang kerja', manage: 'Kelola', developer: 'Pengembang', system: 'Sistem',
+    overview: 'Ringkasan', links: 'Tautan', analytics: 'Analitik', domains: 'Domain', appearancePage: 'Tampilan',
+    members: 'Anggota tim', activity: 'Log aktivitas', whitelabeling: 'Whitelabeling', qrBranding: 'Branding QR', api: 'API key', apiDocs: 'Dokumentasi API', settings: 'Pengaturan', profile: 'Profil',
     workspaceSettings: 'Pengaturan workspace', accountSettings: 'Pengaturan akun',
     currentWorkspace: 'Ruang kerja aktif', appearance: 'Tampilan', signOut: 'Keluar',
     light: 'Terang', dark: 'Gelap', systemMode: 'Sistem',

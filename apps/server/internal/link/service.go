@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -186,6 +187,75 @@ func (s *Service) Get(ctx context.Context, workspaceID, linkID uuid.UUID) (View,
 		return View{}, httpx.Internal(err)
 	}
 	return View{Link: row.Link, Hostname: row.Hostname}, nil
+}
+
+// ListTags returns reusable tag suggestions from links in one workspace.
+func (s *Service) ListTags(ctx context.Context, workspaceID uuid.UUID) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT lower(saved_tag.tag) AS tag
+		FROM links
+		CROSS JOIN LATERAL jsonb_array_elements_text(
+			CASE WHEN jsonb_typeof(metadata->'tags') = 'array' THEN metadata->'tags' ELSE '[]'::jsonb END
+		) AS saved_tag(tag)
+		WHERE workspace_id = $1 AND btrim(saved_tag.tag) <> ''
+		GROUP BY lower(saved_tag.tag)
+		ORDER BY count(*) DESC, lower(saved_tag.tag) ASC
+		LIMIT 100`, workspaceID)
+	if err != nil {
+		return nil, httpx.Internal(err)
+	}
+	defer rows.Close()
+	tags := make([]string, 0)
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, httpx.Internal(err)
+		}
+		tags = append(tags, tag)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, httpx.Internal(err)
+	}
+	return tags, nil
+}
+
+func (s *Service) RecordAudit(ctx context.Context, workspaceID uuid.UUID, actorID *uuid.UUID, action string, entityID uuid.UUID, label string, details json.RawMessage) {
+	if details == nil {
+		details = json.RawMessage(`{}`)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO audit_logs
+		(workspace_id, actor_user_id, action, entity_type, entity_id, entity_label, details)
+		VALUES ($1, $2, $3, 'link', $4, $5, $6)`, workspaceID, actorID, action, entityID, label, details); err != nil {
+		s.logger.Warn("could not record audit log", slog.String("action", action), slog.String("error", err.Error()))
+	}
+}
+
+func (s *Service) ListAuditLog(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]AuditEntry, int64, error) {
+	var total int64
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE workspace_id = $1`, workspaceID).Scan(&total); err != nil {
+		return nil, 0, httpx.Internal(err)
+	}
+	rows, err := s.pool.Query(ctx, `SELECT a.id, a.action, a.entity_type, a.entity_id,
+		a.entity_label, u.name, u.email, a.details, a.created_at
+		FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id
+		WHERE a.workspace_id = $1 ORDER BY a.created_at DESC, a.id DESC LIMIT $2 OFFSET $3`, workspaceID, limit, offset)
+	if err != nil {
+		return nil, 0, httpx.Internal(err)
+	}
+	defer rows.Close()
+	items := make([]AuditEntry, 0)
+	for rows.Next() {
+		var item AuditEntry
+		if err := rows.Scan(&item.ID, &item.Action, &item.EntityType, &item.EntityID, &item.EntityLabel,
+			&item.ActorName, &item.ActorEmail, &item.Details, &item.CreatedAt); err != nil {
+			return nil, 0, httpx.Internal(err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, httpx.Internal(err)
+	}
+	return items, total, nil
 }
 
 // GetByExternalReference answers "have I already shortened this?".

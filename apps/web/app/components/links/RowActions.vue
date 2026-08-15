@@ -6,8 +6,12 @@
  * six columns, and Delete sitting one pixel from Copy is how people delete
  * links they meant to copy.
  */
-const props = defineProps<{ linkId: string }>()
-const emit = defineEmits<{ copy: [], qr: [], delete: [] }>()
+const props = defineProps<{
+  linkId: string
+  status: 'active' | 'disabled' | 'archived'
+  disabled?: boolean
+}>()
+const emit = defineEmits<{ copy: [], qr: [], toggle: [], delete: [] }>()
 
 const open = ref(false)
 const root = useTemplateRef<HTMLElement>('root')
@@ -16,15 +20,16 @@ const menu = useTemplateRef<HTMLElement>('menu')
 const { floatingStyle } = useFloatingPanel(trigger, open, {
   align: 'end',
   width: 176,
-  estimatedHeight: 164,
+  estimatedHeight: 204,
 })
 
 onClickOutside([root, menu], () => (open.value = false))
 
-function choose(action: 'copy' | 'qr' | 'delete') {
+function choose(action: 'copy' | 'qr' | 'toggle' | 'delete') {
   open.value = false
   if (action === 'copy') emit('copy')
   else if (action === 'qr') emit('qr')
+  else if (action === 'toggle') emit('toggle')
   else emit('delete')
 }
 
@@ -40,6 +45,7 @@ const editTo = computed(() => `/dashboard/links/${props.linkId}`)
       :aria-expanded="open"
       aria-haspopup="menu"
       aria-label="Link actions"
+      :disabled="disabled"
       @keydown.esc="open = false"
       @click="open = !open"
     >
@@ -79,6 +85,14 @@ const editTo = computed(() => `/dashboard/links/${props.linkId}`)
         @click="choose('qr')"
       >
         Show QR code
+      </button>
+      <button
+        role="menuitem"
+        type="button"
+        class="block w-full px-3 py-1.5 text-left text-sm text-(--color-content) hover:bg-(--color-surface-muted)"
+        @click="choose('toggle')"
+      >
+        {{ status === 'active' ? 'Disable link' : 'Enable link' }}
       </button>
       <button
         role="menuitem"

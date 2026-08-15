@@ -16,11 +16,13 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   /** Open the advanced block on load when the link already uses those fields. */
   advancedOpen?: boolean
+  tagSuggestions?: string[]
 }>(), {
   errors: () => ({}),
   hasPassword: false,
   disabled: false,
   advancedOpen: false,
+  tagSuggestions: () => [],
 })
 
 const model = defineModel<LinkFormModel>({ required: true })
@@ -70,6 +72,28 @@ const domainOptions = computed(() => props.domains.map(domain => ({
       hint="Optional. Leave empty to use the destination page title automatically."
       :error="errors.title"
     />
+
+    <LinksTagInput
+      v-model="model.tags"
+      label="Tags"
+      :disabled="disabled"
+      hint="Type a tag, then press Enter or comma. Up to 8 tags."
+      :error="errors.tags"
+      :suggestions="tagSuggestions"
+    />
+
+    <div>
+      <label class="mb-1.5 block text-sm font-medium text-(--color-content)">Internal notes</label>
+      <textarea
+        v-model="model.notes"
+        rows="3"
+        maxlength="1000"
+        :disabled="disabled"
+        placeholder="Campaign context, owner, or anything teammates should know…"
+        class="w-full resize-y rounded-md border border-(--color-border) bg-(--color-surface-raised) px-3 py-2 text-sm outline-none transition-colors placeholder:text-(--color-content-subtle) focus:border-(--color-accent) disabled:opacity-60"
+      />
+      <p class="mt-1 text-xs text-(--color-content-muted)">Only visible to workspace members.</p>
+    </div>
 
     <!-- The common case is three fields; everything else is opt-in. -->
     <details

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Domain, PagePreview } from '~/types/api'
 import type { LinkFormErrors } from './form'
-import { emptyLinkForm, optional, toRfc3339 } from './form'
+import { emptyLinkForm, normalizeTags, optional, toRfc3339 } from './form'
 import { ApiError } from '~/composables/useApi'
 
 const ws = useWorkspaces()
@@ -9,6 +9,7 @@ const toast = useToast()
 const { links, domains } = useServices()
 const modal = useCreateLinkModal()
 const activeDomains = ref<Domain[]>([])
+const tagSuggestions = ref<string[]>([])
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 const form = ref(emptyLinkForm())
@@ -27,8 +28,12 @@ async function loadDomains() {
   loading.value = true
   loadError.value = null
   try {
-    const result = await domains.list(workspaceId)
+    const [result, savedTags] = await Promise.all([
+      domains.list(workspaceId),
+      links.tags(workspaceId).catch(() => ({ data: [] as string[] })),
+    ])
     activeDomains.value = result.data.filter(domain => domain.status === 'active')
+    tagSuggestions.value = savedTags.data
     const preferred = activeDomains.value.find(domain => domain.is_default) ?? activeDomains.value[0]
     form.value.domain_id = preferred?.id ?? ''
   } catch (error) {
@@ -94,7 +99,7 @@ function applyError(error: unknown) {
     errors.value.form = 'Something went wrong. Please try again.'
     return
   }
-  const fields = ['destination_url', 'domain_id', 'slug', 'title', 'redirect_type', 'expires_at', 'password', 'max_clicks'] as const
+  const fields = ['destination_url', 'domain_id', 'slug', 'title', 'tags', 'redirect_type', 'expires_at', 'password', 'max_clicks'] as const
   let placed = false
   for (const field of fields) {
     const message = error.field(field)
@@ -117,7 +122,16 @@ async function submit() {
   if (model.domain_id) body.domain_id = model.domain_id
   const slug = optional(model.slug); if (slug) body.slug = slug
   const title = optional(model.title); if (title) body.title = title
-  if (preview.value) body.metadata = { preview: preview.value }
+  const tags = normalizeTags(model.tags)
+  if (tags.length > 8 || tags.some(tag => tag.length > 24)) {
+    errors.value = { tags: 'Use at most 8 tags, with no more than 24 characters each.' }
+    return
+  }
+  if (preview.value || tags.length || model.notes.trim()) body.metadata = {
+    ...(preview.value ? { preview: preview.value } : {}),
+    ...(tags.length ? { tags } : {}),
+    ...(model.notes.trim() ? { notes: model.notes.trim() } : {}),
+  }
   const redirectType = Number(model.redirect_type); if (redirectType > 0) body.redirect_type = redirectType
   const expiresAt = toRfc3339(model.expires_at); if (expiresAt) body.expires_at = expiresAt
   const password = optional(model.password); if (password) body.password = password
@@ -155,7 +169,7 @@ async function submit() {
     </UiEmptyState>
     <form v-else class="flex flex-col gap-4" @submit.prevent="submit">
       <DashboardFormAlert v-if="errors.form">{{ errors.form }}</DashboardFormAlert>
-      <LinksFormFields v-model="form" :domains="activeDomains" :errors="errors" :disabled="submitting" />
+      <LinksFormFields v-model="form" :domains="activeDomains" :errors="errors" :disabled="submitting" :tag-suggestions="tagSuggestions" />
       <div v-if="previewing" class="flex gap-3 rounded-xl border border-(--color-border) p-3" role="status" aria-label="Loading page preview">
         <UiSkeleton height="3rem" width="3rem" rounded="lg" />
         <div class="flex-1 space-y-2"><UiSkeleton width="45%" /><UiSkeleton height="0.75rem" width="80%" /></div>

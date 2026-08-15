@@ -22,6 +22,19 @@ SELECT
 FROM click_hourly
 WHERE workspace_id = $1;
 
+-- name: CountExpiringLinks :one
+SELECT count(*) FROM links
+WHERE workspace_id = $1 AND status = 'active'
+  AND expires_at > now() AND expires_at <= now() + interval '7 days';
+
+-- name: CountExpiringAPIKeys :one
+SELECT count(*) FROM api_keys
+WHERE workspace_id = $1 AND revoked_at IS NULL
+  AND expires_at > now() AND expires_at <= now() + interval '7 days';
+
+-- name: CountDomainIssues :one
+SELECT count(*) FROM domains WHERE workspace_id = $1 AND status <> 'active';
+
 -- name: ClicksOverTime :many
 SELECT
     date_trunc(sqlc.arg(granularity)::text, bucket)::timestamptz AS period,

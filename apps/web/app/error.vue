@@ -3,6 +3,7 @@ import type { NuxtError } from '#app'
 
 const props = defineProps<{ error: NuxtError }>()
 const session = useSession()
+const { branding } = useBranding()
 const isDev = import.meta.dev
 
 const statusCode = computed(() => Number(props.error.statusCode || 500))
@@ -23,7 +24,7 @@ const description = computed(() => {
 const primaryTarget = computed(() => session.isAuthenticated.value ? '/dashboard' : '/')
 const primaryLabel = computed(() => session.isAuthenticated.value ? 'Back to dashboard' : 'Go to home')
 
-useHead({ title: () => `${statusCode.value} · ShortURL` })
+useHead({ title: () => `${statusCode.value} · ${branding.value.app_name}` })
 
 async function goHome() {
   await clearError({ redirect: primaryTarget.value })
@@ -41,10 +42,7 @@ function retry() {
 
     <main class="relative w-full max-w-2xl">
       <NuxtLink to="/" class="mb-8 inline-flex items-center gap-2.5 font-bold tracking-tight">
-        <span class="grid size-10 place-items-center rounded-xl bg-(--color-accent) text-(--color-accent-content) shadow-lg shadow-green-500/15">
-          <Icon name="lucide:link-2" size="20" />
-        </span>
-        ShortURL
+        <BrandLogo />
       </NuxtLink>
 
       <section class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-raised) shadow-[0_24px_80px_rgba(15,23,42,0.10)]">
@@ -79,7 +77,7 @@ function retry() {
       </section>
 
       <p class="mt-5 text-center text-xs text-(--color-content-subtle)">
-        Error {{ statusCode }} · ShortURL
+        Error {{ statusCode }} · {{ branding.app_name }}
       </p>
     </main>
     <UiToaster />

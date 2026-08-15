@@ -66,7 +66,10 @@ func (h *Handler) renderPasswordForm(w http.ResponseWriter, r *http.Request, mes
 	}
 	w.WriteHeader(status)
 
-	if err := passwordPage.Execute(w, struct{ Error string }{Error: message}); err != nil {
+	if err := passwordPage.Execute(w, struct {
+		Error string
+		Brand brandData
+	}{Error: message, Brand: h.publicBrand(r)}); err != nil {
 		h.logger.Warn("render password page", "error", err)
 	}
 }

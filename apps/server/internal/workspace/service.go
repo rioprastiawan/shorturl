@@ -139,11 +139,19 @@ func (s *Service) Delete(ctx context.Context, workspaceID, userID uuid.UUID) err
 	return nil
 }
 
-// ListMembers returns the workspace's members, owner first.
-func (s *Service) ListMembers(ctx context.Context, workspaceID uuid.UUID) ([]Member, error) {
-	rows, err := s.q.ListWorkspaceMembers(ctx, workspaceID)
+// ListMembers returns one page of the workspace's members, owner first.
+func (s *Service) ListMembers(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]Member, int64, error) {
+	total, err := s.q.CountWorkspaceMembers(ctx, workspaceID)
 	if err != nil {
-		return nil, httpx.Internal(err)
+		return nil, 0, httpx.Internal(err)
+	}
+	rows, err := s.q.ListWorkspaceMembers(ctx, store.ListWorkspaceMembersParams{
+		WorkspaceID: workspaceID,
+		PageLimit:   int32(limit),
+		PageOffset:  int32(offset),
+	})
+	if err != nil {
+		return nil, 0, httpx.Internal(err)
 	}
 
 	out := make([]Member, 0, len(rows))
@@ -156,7 +164,7 @@ func (s *Service) ListMembers(ctx context.Context, workspaceID uuid.UUID) ([]Mem
 			CreatedAt: row.CreatedAt,
 		})
 	}
-	return out, nil
+	return out, total, nil
 }
 
 // MemberRole returns a member's current role, which the handler needs before
@@ -225,25 +233,30 @@ func (s *Service) CreateInvitation(ctx context.Context, workspaceID, createdBy u
 	return &InvitationDTO{ID: id, Token: token, Role: string(role), ExpiresAt: expiresAt, CreatedAt: createdAt}, nil
 }
 
-func (s *Service) ListInvitations(ctx context.Context, workspaceID uuid.UUID) ([]InvitationDTO, error) {
+func (s *Service) ListInvitations(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]InvitationDTO, int64, error) {
+	var total int64
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM workspace_invitations WHERE workspace_id = $1`, workspaceID).Scan(&total); err != nil {
+		return nil, 0, httpx.Internal(err)
+	}
 	rows, err := s.pool.Query(ctx, `SELECT id, role, expires_at, accepted_at, revoked_at, created_at
-		FROM workspace_invitations WHERE workspace_id = $1 ORDER BY created_at DESC`, workspaceID)
+		FROM workspace_invitations WHERE workspace_id = $1 ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3`, workspaceID, limit, offset)
 	if err != nil {
-		return nil, httpx.Internal(err)
+		return nil, 0, httpx.Internal(err)
 	}
 	defer rows.Close()
 	items := make([]InvitationDTO, 0)
 	for rows.Next() {
 		var item InvitationDTO
 		if err := rows.Scan(&item.ID, &item.Role, &item.ExpiresAt, &item.AcceptedAt, &item.RevokedAt, &item.CreatedAt); err != nil {
-			return nil, httpx.Internal(err)
+			return nil, 0, httpx.Internal(err)
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, httpx.Internal(err)
+		return nil, 0, httpx.Internal(err)
 	}
-	return items, nil
+	return items, total, nil
 }
 
 func (s *Service) RevokeInvitation(ctx context.Context, workspaceID, invitationID uuid.UUID) error {

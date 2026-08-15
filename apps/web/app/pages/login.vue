@@ -7,6 +7,7 @@ definePageMeta({ layout: 'auth', middleware: 'guest' })
 useHead({ title: 'Sign in · ShortURL' })
 
 const { auth } = useServices()
+const { branding } = useBranding()
 const session = useSession()
 const route = useRoute()
 const setupStatus = useState<import('~/types/api').SetupStatus | null>('setup.status', () => null)
@@ -116,7 +117,7 @@ async function submit() {
       />
 
       <UiButton type="submit" :loading="pending">
-        {{ needsTwoFactor ? 'Verify and sign in' : 'Sign in to ShortURL' }}
+        {{ needsTwoFactor ? 'Verify and sign in' : `Sign in to ${branding.app_name}` }}
       </UiButton>
     </form>
 

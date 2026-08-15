@@ -3,7 +3,7 @@ import { ApiError } from '~/composables/useApi'
 import { formatDate } from '~/components/dashboard/format'
 import { useServices } from '~/services'
 
-definePageMeta({ middleware: 'auth' })
+definePageMeta({ middleware: 'auth', alias: '/dashboard/workspace-settings' })
 useHead({ title: 'Workspace Settings · ShortURL' })
 const ws = useWorkspaces()
 const { workspaces } = useServices()

@@ -53,7 +53,11 @@ ORDER BY
         WHEN 'admin'  THEN 1
         ELSE 2
     END,
-    users.name ASC;
+    users.name ASC
+LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
+
+-- name: CountWorkspaceMembers :one
+SELECT count(*) FROM workspace_members WHERE workspace_id = $1;
 
 -- name: UpdateWorkspaceMemberRole :one
 UPDATE workspace_members

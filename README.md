@@ -18,6 +18,8 @@ one `short_url` back, safe to retry.
   invalidation on every change
 - **Link controls** — custom or generated slugs, 301/302/307/308, expiry, click
   limits, password protection
+- **CSV import and export** — migrate links in bulk with per-row validation and
+  failure reporting
 - **Asynchronous analytics** — clicks queue in Redis Streams and never delay a
   redirect; a worker drains them into pre-aggregated rollup tables
 - **Public REST API** with per-workspace API keys, scopes, and `Idempotency-Key`
@@ -67,7 +69,7 @@ For a Dokploy deployment backed by images published from GitHub Actions, use
 The source version is recorded in [`VERSION`](VERSION). Release tags use
 semantic versions such as `v1.2.3`; pushing one publishes matching server and
 web images to GHCR and creates a GitHub Release with generated notes. The
-dashboard shows its installed build under **Account Settings → Version** and
+dashboard shows its installed build under **System → Settings** and
 checks the repository's latest GitHub Release. The check is informational
 only: an unavailable GitHub API never blocks the app or performs an automatic
 upgrade.
@@ -79,6 +81,15 @@ matching tag:
 git tag v1.2.3
 git push origin main v1.2.3
 ```
+
+### Import and export links
+
+Open **Links** and use **Import CSV** or **Export CSV**. Export includes every
+link matching the active filters, not only the visible page. Import accepts up
+to 1,000 rows (1 MB) and requires a `destination_url` column. Optional columns
+are `domain`, `slug`, `title`, `status`, `redirect_type`, `expires_at`,
+`max_clicks`, `external_reference`, `tags`, and `notes`; separate tags with
+`|`. Passwords are intentionally never exported.
 
 ## Use the API
 

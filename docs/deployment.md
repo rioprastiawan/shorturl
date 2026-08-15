@@ -104,15 +104,34 @@ Adding a redirect domain such as `go.yourcompany.com` must not require editing
 `docker/traefik/dynamic/` and reloads on change, so a verified domain becomes a
 file in that directory.
 
-Writing those files automatically is part of Milestone 5, when domain
-verification lands. Until then, add one by hand — see
-[docker/traefik/dynamic/README.md](../docker/traefik/dynamic/README.md) for the
-template.
+Add the hostname in **Domains**, publish the displayed ownership and routing
+DNS records, then press **Verify**. ShortURL writes the Traefik router after
+both checks pass; no Compose edit or restart is required.
 
 Certificates are deliberately requested only for verified domains. A catch-all
 router would make Traefik ask Let's Encrypt for a certificate for every hostname
 anyone points at your server, which burns the rate limit and can block your real
 domains for a week.
+
+### Cloudflare in front of ShortURL
+
+Prefer Cloudflare **Full (strict)** mode. Traffic is encrypted on both hops and
+Cloudflare validates the origin certificate issued by Let's Encrypt. Keep the
+DNS record proxied and leave ShortURL's HTTPS configuration enabled.
+
+Cloudflare **Flexible** mode sends HTTP from Cloudflare to the origin and does
+not require an origin certificate, but the origin hop is unencrypted and an
+origin HTTP-to-HTTPS redirect can cause `ERR_TOO_MANY_REDIRECTS`. The bundled
+standalone Traefik stack redirects HTTP globally, so Flexible mode is not a
+supported per-domain switch. See Cloudflare's official
+[Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/),
+[Flexible](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/flexible/),
+and [redirect-loop](https://developers.cloudflare.com/ssl/troubleshooting/too-many-redirects/)
+documentation.
+
+When Dokploy is the reverse proxy, configure HTTPS and certificates in
+Dokploy's Domains screen. Domain settings inside ShortURL cannot mutate
+Dokploy's proxy configuration.
 
 ## Backups
 
@@ -253,6 +272,7 @@ Redis to report healthy before it starts, so a failure there cascades visibly.
 variable is missing. Run `./scripts/install.sh` to fill in the generated ones.
 Compose refuses to start rather than fall back to an insecure default.
 
-**Dashboard loads but the API returns 404 for everything.** Expected at this
-milestone: the API endpoints themselves are not implemented yet. `/health`
-should return `{"status":"ok"}` — if that works, the routing is correct.
+**Dashboard loads but the API returns 404.** Confirm that `/api/*` is routed to
+the `server` service. In the bundled stack Traefik handles it; in Dokploy the
+web container proxies `/api/*` internally. `/health` should return
+`{"status":"ok"}` from the public web service.

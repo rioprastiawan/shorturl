@@ -44,6 +44,10 @@ const stats = computed<Stat[]>(() => {
 const needsDomain = computed(() => overview.value?.active_domains === 0)
 const firstName = computed(() => session.user.value?.name?.trim().split(/\s+/)[0] || 'there')
 const onboardingComplete = computed(() => !needsDomain.value && (overview.value?.total_links ?? 0) > 0)
+const canManage = computed(() => ws.role.value === 'owner' || ws.role.value === 'admin')
+const alertCount = computed(() => (overview.value?.expiring_links ?? 0)
+  + (overview.value?.domain_issues ?? 0)
+  + (canManage.value ? (overview.value?.expiring_api_keys ?? 0) : 0))
 
 const errorMessage = computed(() => {
   const e = error.value
@@ -121,6 +125,23 @@ const errorMessage = computed(() => {
             </span>
             <span><strong class="block text-sm">Create your first link</strong><span class="text-xs text-(--color-content-muted)">{{ overview.total_links === 0 ? 'Turn a long address into a short link' : 'First link created' }}</span></span>
           </button>
+        </div>
+      </UiCard>
+
+      <UiCard v-if="onboardingComplete && alertCount" compact title="Needs your attention" description="Items that may affect redirects or integrations soon.">
+        <div class="grid gap-2 sm:grid-cols-3">
+          <NuxtLink v-if="overview.expiring_links" to="/dashboard/links" class="flex items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 hover:bg-amber-500/10">
+            <Icon name="lucide:timer" size="18" class="text-(--color-warning)" />
+            <span><strong class="block text-sm">{{ overview.expiring_links }} expiring link{{ overview.expiring_links === 1 ? '' : 's' }}</strong><span class="text-xs text-(--color-content-muted)">Within the next 7 days</span></span>
+          </NuxtLink>
+          <NuxtLink v-if="overview.domain_issues" to="/dashboard/domains" class="flex items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 hover:bg-amber-500/10">
+            <Icon name="lucide:triangle-alert" size="18" class="text-(--color-warning)" />
+            <span><strong class="block text-sm">{{ overview.domain_issues }} domain issue{{ overview.domain_issues === 1 ? '' : 's' }}</strong><span class="text-xs text-(--color-content-muted)">Verification needs attention</span></span>
+          </NuxtLink>
+          <NuxtLink v-if="canManage && overview.expiring_api_keys" to="/dashboard/api-keys" class="flex items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 hover:bg-amber-500/10">
+            <Icon name="lucide:key-round" size="18" class="text-(--color-warning)" />
+            <span><strong class="block text-sm">{{ overview.expiring_api_keys }} expiring API key{{ overview.expiring_api_keys === 1 ? '' : 's' }}</strong><span class="text-xs text-(--color-content-muted)">Within the next 7 days</span></span>
+          </NuxtLink>
         </div>
       </UiCard>
 

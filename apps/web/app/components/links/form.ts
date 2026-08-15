@@ -12,6 +12,9 @@ export interface LinkFormModel {
   destination_url: string
   slug: string
   title: string
+  /** Comma-separated labels, normalized before submission. */
+  tags: string
+  notes: string
   redirect_type: string
   /** `datetime-local` value: "YYYY-MM-DDTHH:mm" in the browser's zone. */
   expires_at: string
@@ -37,6 +40,8 @@ export function emptyLinkForm(domainId = ''): LinkFormModel {
     destination_url: '',
     slug: '',
     title: '',
+    tags: '',
+    notes: '',
     redirect_type: '302',
     expires_at: '',
     password: '',
@@ -52,12 +57,18 @@ export function linkToForm(link: Link): LinkFormModel {
     destination_url: link.destination_url,
     slug: link.slug,
     title: link.title ?? '',
+    tags: Array.isArray(link.metadata?.tags) ? link.metadata.tags.join(', ') : '',
+    notes: typeof link.metadata?.notes === 'string' ? link.metadata.notes : '',
     redirect_type: String(link.redirect_type || 302),
     expires_at: toDatetimeLocal(link.expires_at),
     password: '',
     max_clicks: link.max_clicks === null ? '' : String(link.max_clicks),
     remove_password: false,
   }
+}
+
+export function normalizeTags(value: string): string[] {
+  return [...new Set(value.split(',').map(tag => tag.trim().toLowerCase()).filter(Boolean))]
 }
 
 /**

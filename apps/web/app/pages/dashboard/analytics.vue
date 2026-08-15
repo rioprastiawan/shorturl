@@ -128,6 +128,56 @@ const breakdowns = computed(() => [
 ].filter(card => report.value?.breakdowns_scoped && card.items.length > 0))
 
 const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 0)
+
+function csvCell(value: unknown): string {
+  const text = String(value ?? '')
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+}
+
+function exportCsv() {
+  const current = report.value
+  if (!current) return
+  const rows: unknown[][] = [
+    ['ShortURL analytics export'],
+    ['Range', current.range],
+    ['From', current.from],
+    ['To', current.to],
+    ['Domain filter', domainOptions.value.find(item => item.value === selectedDomain.value)?.label ?? 'All domains'],
+    ['Link filter', linkOptions.value.find(item => item.value === selectedLink.value)?.label ?? 'All links'],
+    [],
+    ['Summary'],
+    ['Total clicks', current.summary.total_clicks],
+    ['Unique visitors', current.summary.unique_visitors],
+    ['Previous clicks', current.summary.previous_clicks],
+    ['Growth percent', current.summary.growth_percent],
+    ['Average clicks per day', current.summary.average_clicks_per_day],
+    [],
+    ['Clicks over time'],
+    ['Period', 'Clicks'],
+    ...current.series.map(point => [point.period, point.clicks]),
+    [],
+    ['Top links'],
+    ['Short URL', 'Title', 'Clicks'],
+    ...current.top_links.map(link => [link.short_url, link.title, link.clicks]),
+  ]
+  const dimensions: Array<[string, { value: string, clicks: number }[]]> = [
+    ['Referrers', current.referrers], ['UTM sources', current.utm_sources],
+    ['UTM mediums', current.utm_mediums], ['UTM campaigns', current.utm_campaigns],
+    ['Devices', current.devices], ['Browsers', current.browsers], ['Operating systems', current.os],
+    ['Countries', current.countries], ['Hours', current.hours], ['Weekdays', current.weekdays],
+  ]
+  for (const [title, values] of dimensions) {
+    if (!values.length) continue
+    rows.push([], [title], ['Value', 'Clicks'], ...values.map(item => [item.value, item.clicks]))
+  }
+  const csv = rows.map(row => row.map(csvCell).join(',')).join('\n')
+  const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `shorturl-analytics-${current.range}-${new Date().toISOString().slice(0, 10)}.csv`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
 </script>
 
 <template>
@@ -142,6 +192,9 @@ const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 
           Clicks across every link in this workspace.
         </p>
       </div>
+      <UiButton variant="secondary" :disabled="loading || !report" @click="exportCsv">
+        <Icon name="lucide:download" size="15" /> Export CSV
+      </UiButton>
     </header>
 
     <section class="rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-3 shadow-sm" aria-label="Analytics filters">

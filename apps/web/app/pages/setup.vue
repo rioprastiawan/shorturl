@@ -15,6 +15,7 @@ definePageMeta({ layout: 'auth' })
 useHead({ title: 'Set up ShortURL' })
 
 const { setup } = useServices()
+const { branding } = useBranding()
 const session = useSession()
 const setupComplete = useState<boolean | null>('setup.completed', () => null)
 
@@ -199,7 +200,7 @@ async function submit() {
         Step {{ step }} of {{ TOTAL_STEPS }}
       </p>
       <h1 class="text-xl font-semibold tracking-tight">
-        {{ step === 1 ? 'Welcome to ShortURL' : step === 2 ? 'Installation mode' : step === 3 ? 'Administrator account' : 'First workspace' }}
+        {{ step === 1 ? `Welcome to ${branding.app_name}` : step === 2 ? 'Installation mode' : step === 3 ? 'Administrator account' : 'First workspace' }}
       </h1>
     </header>
 

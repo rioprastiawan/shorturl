@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rioprastiawan/shorturl/apps/server/internal/analytics"
+	"github.com/rioprastiawan/shorturl/apps/server/internal/branding"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/config"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/link"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/middleware"
@@ -27,11 +28,12 @@ type Handler struct {
 	producer *analytics.Producer
 	cfg      config.Config
 	logger   *slog.Logger
+	branding *branding.Service
 }
 
 // NewHandler builds the redirect handler.
-func NewHandler(links *link.Service, producer *analytics.Producer, cfg config.Config, logger *slog.Logger) *Handler {
-	return &Handler{links: links, producer: producer, cfg: cfg, logger: logger}
+func NewHandler(links *link.Service, producer *analytics.Producer, brand *branding.Service, cfg config.Config, logger *slog.Logger) *Handler {
+	return &Handler{links: links, producer: producer, branding: brand, cfg: cfg, logger: logger}
 }
 
 // ServeHTTP resolves host + slug and responds.

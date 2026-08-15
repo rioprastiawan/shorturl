@@ -3,7 +3,10 @@ const session = useSession()
 const { active, load: loadWorkspaces } = useWorkspaces()
 const route = useRoute()
 const { t } = useUserPreferences()
+const config = useRuntimeConfig()
+const appVersion = computed(() => String(config.public.appVersion || 'dev'))
 const createLinkModal = useCreateLinkModal()
+const { branding } = useBranding()
 const { helpOpen: shortcutHelpOpen, commandOpen } = useDashboardShortcuts()
 const moreOpen = ref(false)
 const accountMenuOpen = ref(false)
@@ -22,14 +25,18 @@ await loadWorkspaces()
 const groups = computed(() => {
   const role = active.value?.role
   return [
-    { label: t('workspace'), items: [
+    { label: t('general'), items: [
       { to: '/dashboard', label: t('overview'), icon: 'lucide:layout-dashboard', shortcut: 'G O' },
       { to: '/dashboard/links', label: t('links'), icon: 'lucide:link-2', shortcut: 'G L' },
       { to: '/dashboard/analytics', label: t('analytics'), icon: 'lucide:chart-no-axes-combined', shortcut: 'G A' },
     ] },
     { label: t('manage'), items: [
       { to: '/dashboard/domains', label: t('domains'), icon: 'lucide:globe-2', shortcut: 'G D' },
-      { to: '/dashboard/members', label: t('members'), icon: 'lucide:users', shortcut: 'G M' },
+    ] },
+    { label: t('workspace'), items: [
+      { to: '/dashboard/workspace/members', label: t('members'), icon: 'lucide:users', shortcut: 'G M' },
+      { to: '/dashboard/workspace/activity', label: t('activity'), icon: 'lucide:scroll-text' },
+      { to: '/dashboard/workspace/settings', label: t('settings'), icon: 'lucide:settings', shortcut: 'G S' },
     ] },
     ...((role === 'owner' || role === 'admin')
       ? [{ label: t('developer'), items: [
@@ -38,7 +45,12 @@ const groups = computed(() => {
         ] }]
       : []),
     { label: t('system'), items: [
-      { to: '/dashboard/workspace-settings', label: t('settings'), icon: 'lucide:settings', shortcut: 'G S' },
+      ...(session.user.value?.is_admin ? [{ to: '/dashboard/system/whitelabeling', label: t('whitelabeling'), icon: 'lucide:badge-check' }] : []),
+      ...(session.user.value?.is_admin ? [{ to: '/dashboard/system/qr-branding', label: t('qrBranding'), icon: 'lucide:qr-code' }] : []),
+      { to: '/dashboard/system/settings', label: t('settings'), icon: 'lucide:settings' },
+    ] },
+    { label: t('appearance'), items: [
+      { to: '/dashboard/appearance', label: t('appearancePage'), icon: 'lucide:palette' },
     ] },
   ]
 })
@@ -68,14 +80,14 @@ async function signOut() {
 
 <template>
   <div class="min-h-dvh bg-(--color-surface-muted) lg:grid lg:grid-cols-[15.5rem_1fr]">
-    <header class="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-(--color-border) bg-(--color-surface-raised)/95 px-3 backdrop-blur sm:px-4 lg:hidden">
+    <header class="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-(--color-shell-border) bg-(--color-shell)/95 px-3 text-(--color-shell-content) shadow-sm backdrop-blur sm:px-4 lg:hidden">
       <NuxtLink to="/dashboard" class="flex shrink-0 items-center gap-2.5 font-bold tracking-tight">
-        <span class="grid size-8 place-items-center rounded-lg bg-(--color-accent) text-white"><Icon name="lucide:link-2" size="17" /></span>
-        <span class="hidden sm:inline">ShortURL</span>
+        <BrandLogo compact inverse />
+        <span class="hidden sm:inline">{{ branding.app_name }}</span>
       </NuxtLink>
 
       <div class="min-w-0 flex-1">
-        <WorkspaceSwitcher compact />
+        <WorkspaceSwitcher compact inverse />
       </div>
 
     </header>
@@ -90,42 +102,41 @@ async function signOut() {
     </Transition>
 
     <aside
-      class="mobile-sidebar fixed inset-y-0 left-0 z-50 hidden w-[15.5rem] flex-col bg-[#172033] text-white shadow-2xl dark:bg-[#080c12] lg:sticky lg:top-0 lg:flex lg:h-dvh lg:shadow-none"
+      class="mobile-sidebar fixed inset-y-0 left-0 z-50 hidden w-[15.5rem] flex-col bg-(--color-shell) text-(--color-shell-content) shadow-2xl lg:sticky lg:top-0 lg:flex lg:h-dvh lg:shadow-none"
     >
       <div class="flex h-15 items-center justify-between px-3.5">
         <NuxtLink to="/dashboard" class="flex items-center gap-3 text-lg font-bold tracking-tight">
-          <span class="grid size-9 place-items-center rounded-lg bg-[#84cc16] text-[#172033] shadow-lg shadow-black/10"><Icon name="lucide:link-2" size="19" /></span>
-          <span>ShortURL</span>
+          <BrandLogo inverse />
         </NuxtLink>
       </div>
 
       <div class="px-3 pb-3">
-        <p class="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.16em] text-white/45">{{ t('currentWorkspace') }}</p>
+        <p class="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.16em] text-(--color-shell-content-muted)">{{ t('currentWorkspace') }}</p>
         <WorkspaceSwitcher />
       </div>
 
       <nav class="flex-1 overflow-y-auto px-2.5 pb-3">
         <div v-for="group in groups" :key="group.label" class="mb-3">
-          <p class="mb-1 px-2.5 text-[9px] font-bold uppercase tracking-[0.16em] text-white/40">{{ group.label }}</p>
+          <p class="mb-1 px-2.5 text-[9px] font-bold uppercase tracking-[0.16em] text-(--color-shell-content-muted)">{{ group.label }}</p>
           <NuxtLink
             v-for="item in group.items"
             :key="item.to"
             :to="item.to"
             class="mb-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-all"
-            :class="isActive(item.to) ? 'bg-white text-[#172033] shadow-sm dark:bg-[#202936] dark:text-white' : 'text-white/70 hover:bg-white/8 hover:text-white'"
+            :class="isActive(item.to) ? 'bg-(--color-shell-hover) text-(--color-shell-accent)' : 'text-(--color-shell-content-muted) hover:bg-(--color-shell-hover) hover:text-(--color-shell-content-hover)'"
           >
             <Icon :name="item.icon" size="18" />
             <span class="min-w-0 flex-1">{{ item.label }}</span>
             <kbd
               v-if="item.shortcut"
               class="shrink-0 rounded border px-1.5 py-0.5 font-sans text-[9px] font-semibold tracking-wide"
-              :class="isActive(item.to) ? 'border-slate-300 bg-slate-100 text-slate-500 dark:border-white/15 dark:bg-white/8 dark:text-white/50' : 'border-white/12 bg-white/6 text-white/35'"
+              :class="isActive(item.to) ? 'border-(--color-shell-accent) bg-(--color-shell-hover) text-(--color-shell-accent)' : 'border-(--color-shell-border) bg-(--color-shell-hover) text-(--color-shell-content-muted)'"
             >{{ item.shortcut }}</kbd>
           </NuxtLink>
         </div>
       </nav>
 
-      <div class="border-t border-white/10 p-3">
+      <div class="border-t border-(--color-shell-border) p-3">
         <div ref="accountMenu" class="relative" @keydown.esc="accountMenuOpen = false">
           <Teleport to="body">
             <Transition name="menu">
@@ -173,24 +184,32 @@ async function signOut() {
           <button
             ref="accountTrigger"
             type="button"
-            class="flex w-full items-center gap-2.5 rounded-lg bg-white/6 p-2.5 text-left transition-colors hover:bg-white/10"
+            class="flex w-full items-center gap-2.5 rounded-lg bg-(--color-shell-hover) p-2.5 text-left transition-colors hover:bg-(--color-shell-border)"
             :aria-expanded="accountMenuOpen"
             aria-haspopup="menu"
             @click="accountMenuOpen = !accountMenuOpen"
           >
-            <span class="grid size-9 shrink-0 place-items-center rounded-full bg-[#84cc16] text-sm font-bold text-[#172033]">{{ session.user.value?.name?.charAt(0).toUpperCase() || 'U' }}</span>
+            <span class="grid size-9 shrink-0 place-items-center rounded-full bg-(--color-shell-accent) text-sm font-bold text-(--color-accent-content)">{{ session.user.value?.name?.charAt(0).toUpperCase() || 'U' }}</span>
             <span class="min-w-0 flex-1">
               <span class="block truncate text-sm font-semibold">{{ session.user.value?.name }}</span>
-              <span class="block truncate text-xs text-white/45">{{ session.user.value?.email }}</span>
+              <span class="block truncate text-xs text-(--color-shell-content-muted)">{{ session.user.value?.email }}</span>
             </span>
             <Icon
               name="lucide:chevron-up"
               size="17"
-              class="shrink-0 text-white/45 transition-transform"
+              class="shrink-0 text-(--color-shell-content-muted) transition-transform"
               :class="accountMenuOpen ? 'rotate-180' : ''"
             />
           </button>
         </div>
+        <NuxtLink
+          to="/dashboard/system/settings"
+          class="mt-2 flex items-center justify-between gap-2 rounded-md px-2 py-1 text-[10px] text-(--color-shell-content-muted) transition-colors hover:bg-(--color-shell-hover) hover:text-(--color-shell-content-hover)"
+          title="Open System Settings"
+        >
+          <span>{{ branding.app_name }}</span>
+          <span class="min-w-0 truncate font-mono">{{ appVersion }}</span>
+        </NuxtLink>
       </div>
     </aside>
 
@@ -245,12 +264,16 @@ async function signOut() {
               <Icon name="lucide:log-out" size="17" /> {{ t('signOut') }}
             </button>
           </div>
+          <NuxtLink to="/dashboard/system/settings" class="mt-3 flex items-center justify-between rounded-lg bg-(--color-surface-muted) px-3 py-2 text-xs text-(--color-content-muted)" @click="moreOpen = false">
+            <span>ShortURL version</span>
+            <span class="font-mono font-medium text-(--color-content)">{{ appVersion }}</span>
+          </NuxtLink>
         </div>
       </section>
     </Transition>
 
     <nav
-      class="fixed inset-x-0 bottom-0 z-30 border-t border-(--color-border) bg-(--color-surface-raised)/95 px-2 pt-1.5 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden"
+      class="mobile-dashboard-nav fixed inset-x-0 bottom-0 z-30 border-t border-(--color-shell-border) bg-(--color-shell)/95 px-2 pt-1.5 text-(--color-shell-content) shadow-[0_-8px_30px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden"
       style="padding-bottom: max(0.375rem, env(safe-area-inset-bottom));"
       aria-label="Primary navigation"
     >
@@ -261,8 +284,8 @@ async function signOut() {
         <NuxtLink to="/dashboard/links" class="mobile-bottom-link" :class="isActive('/dashboard/links') ? 'is-active' : ''">
           <Icon name="lucide:link-2" size="20" /><span>{{ t('links') }}</span>
         </NuxtLink>
-        <button type="button" class="group flex flex-col items-center gap-1 text-[10px] font-semibold text-(--color-content-muted)" aria-label="Create short link" @click="createLinkModal.show()">
-          <span class="-mt-5 grid size-13 place-items-center rounded-2xl bg-(--color-accent) text-(--color-accent-content) shadow-lg shadow-(--color-accent)/25 transition-transform group-active:scale-95">
+        <button type="button" class="group flex flex-col items-center gap-1 text-[10px] font-semibold text-(--color-shell-content-muted)" aria-label="Create short link" @click="createLinkModal.show()">
+          <span class="-mt-5 grid size-13 place-items-center rounded-2xl bg-(--color-shell-accent) text-(--color-accent-content) shadow-lg shadow-black/25 transition-transform group-active:scale-95">
             <Icon name="lucide:plus" size="24" />
           </span>
           <span>Create</span>

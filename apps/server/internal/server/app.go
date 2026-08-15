@@ -10,6 +10,7 @@ import (
 	"github.com/rioprastiawan/shorturl/apps/server/internal/analytics"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/apikey"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/auth"
+	"github.com/rioprastiawan/shorturl/apps/server/internal/branding"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/cache"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/config"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/database"
@@ -40,6 +41,7 @@ type App struct {
 	Link      *link.Service
 	Analytics *analytics.Service
 	APIKey    *apikey.Service
+	Branding  *branding.Service
 
 	Producer *analytics.Producer
 }
@@ -82,6 +84,7 @@ func NewApp(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, 
 		Link:      link.NewService(pool, q, linkCache, cfg, logger),
 		Analytics: analytics.NewService(q, cfg),
 		APIKey:    apikey.NewService(pool, q, logger),
+		Branding:  branding.NewService(pool, q),
 
 		Producer: analytics.NewProducer(redis, cfg, logger),
 	}

@@ -30,6 +30,18 @@ type AppSetting struct {
 	UpdatedAt time.Time
 }
 
+type AuditLog struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ActorUserID *uuid.UUID
+	Action      string
+	EntityType  string
+	EntityID    *uuid.UUID
+	EntityLabel *string
+	Details     []byte
+	CreatedAt   time.Time
+}
+
 type ClickDimensionDaily struct {
 	WorkspaceID uuid.UUID
 	Day         time.Time
@@ -119,6 +131,13 @@ type Session struct {
 	ExpiresAt  time.Time
 	LastSeenAt time.Time
 	CreatedAt  time.Time
+}
+
+type SystemBrandingAsset struct {
+	Kind        string
+	ContentType string
+	Data        []byte
+	UpdatedAt   time.Time
 }
 
 type User struct {

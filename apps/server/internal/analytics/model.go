@@ -9,6 +9,9 @@ type OverviewResponse struct {
 	TotalClicks   int64        `json:"total_clicks"`
 	ClicksToday   int64        `json:"clicks_today"`
 	ActiveDomains int64        `json:"active_domains"`
+	ExpiringLinks int64        `json:"expiring_links"`
+	ExpiringKeys  int64        `json:"expiring_api_keys"`
+	DomainIssues  int64        `json:"domain_issues"`
 	RecentLinks   []RecentLink `json:"recent_links"`
 }
 

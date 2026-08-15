@@ -11,37 +11,6 @@ const session = useSession()
 const { auth } = useServices()
 const toast = useToast()
 const { t } = useUserPreferences()
-const config = useRuntimeConfig()
-
-const installedVersion = computed(() => String(config.public.appVersion || 'dev'))
-const latestVersion = ref<string | null>(null)
-const latestReleaseUrl = ref('https://github.com/rioprastiawan/shorturl/releases')
-
-function semver(value: string): [number, number, number] | null {
-  const match = /(?:^|v)(\d+)\.(\d+)\.(\d+)/.exec(value)
-  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null
-}
-
-const updateAvailable = computed(() => {
-  const installed = semver(installedVersion.value)
-  const latest = semver(latestVersion.value ?? '')
-  if (!installed || !latest) return false
-  for (let index = 0; index < 3; index++) {
-    if (latest[index]! !== installed[index]!) return latest[index]! > installed[index]!
-  }
-  return false
-})
-
-onMounted(async () => {
-  try {
-    const release = await $fetch<{ tag_name: string, html_url: string }>('https://api.github.com/repos/rioprastiawan/shorturl/releases/latest')
-    latestVersion.value = release.tag_name
-    latestReleaseUrl.value = release.html_url
-  } catch {
-    // Update checks are best-effort. Offline/private installations continue
-    // to work and still show their installed build version.
-  }
-})
 
 const preferenceLanguage = ref<'en' | 'id'>(session.user.value?.language || 'en')
 const preferenceTimezone = ref(session.user.value?.timezone || 'UTC')
@@ -218,20 +187,6 @@ async function disableTwoFactor() {
     </UiCard>
     <UiCard title="Two-step verification" description="Add an authenticator code after your password when signing in.">
       <div v-if="twoFactorLoading" class="flex items-center gap-3" role="status" aria-label="Loading two-factor authentication status"><UiSkeleton height="2.5rem" width="2.5rem" rounded="lg" /><div class="flex-1 space-y-2"><UiSkeleton width="7rem" /><UiSkeleton height="0.65rem" width="65%" /></div><UiSkeleton height="2rem" width="4.5rem" rounded="lg" /></div><div v-else class="flex flex-wrap items-center justify-between gap-4"><div class="flex items-center gap-3"><span class="grid size-10 place-items-center rounded-xl" :class="twoFactorEnabled ? 'bg-emerald-500/10 text-(--color-success)' : 'bg-(--color-surface-muted) text-(--color-content-muted)'"><Icon name="lucide:shield-check" size="19" /></span><div><p class="text-sm font-semibold">{{ twoFactorEnabled ? 'Enabled' : 'Not enabled' }}</p><p class="text-xs text-(--color-content-muted)">{{ twoFactorEnabled ? 'Your account requires a second verification step.' : 'Optional — your current sign-in remains unchanged.' }}</p></div></div><UiButton v-if="!twoFactorEnabled" size="sm" @click="openTwoFactorSetup">Set up</UiButton><UiButton v-else variant="secondary" size="sm" @click="openDisableTwoFactor">Disable</UiButton></div>
-    </UiCard>
-    <UiCard title="Appearance" description="Choose how ShortURL looks on this browser."><AppearancePicker /><p class="mt-3 text-xs text-(--color-content-muted)">System automatically follows your device appearance setting.</p></UiCard>
-    <UiCard title="Version" description="Build information for this ShortURL installation.">
-      <div class="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p class="text-sm font-semibold">Installed {{ installedVersion }}</p>
-          <p v-if="updateAvailable" class="mt-1 text-xs text-(--color-danger)">A newer release, {{ latestVersion }}, is available.</p>
-          <p v-else-if="latestVersion" class="mt-1 text-xs text-(--color-content-muted)">Latest release: {{ latestVersion }}</p>
-          <p v-else class="mt-1 text-xs text-(--color-content-muted)">The latest release could not be checked.</p>
-        </div>
-        <a :href="latestReleaseUrl" target="_blank" rel="noopener noreferrer" class="inline-flex items-center rounded-lg border border-(--color-border-strong) px-3 py-1.5 text-sm font-medium transition-colors hover:bg-(--color-surface-muted)">
-          {{ updateAvailable ? 'View update' : 'View releases' }}
-        </a>
-      </div>
     </UiCard>
     <UiCard :title="t('preferences')" :description="t('preferencesDescription')"><form class="grid gap-4 sm:grid-cols-2" @submit.prevent="savePreferences"><UiSelect v-model="preferenceLanguage" :label="t('language')" :options="languageOptions" :disabled="preferencesSaving" :error="preferenceErrors.language" /><UiSelect v-model="preferenceTimezone" :label="t('timezone')" :options="timezoneSelectOptions" searchable search-placeholder="Search timezone…" :disabled="preferencesSaving" :error="preferenceErrors.timezone" /><div class="sm:col-span-2"><UiButton type="submit" :loading="preferencesSaving" :disabled="!preferencesDirty">{{ t('savePreferences') }}</UiButton></div></form></UiCard>
     <UiModal v-model="passwordOpen" title="Change your password" description="Use at least 10 characters. Every other signed-in session will be ended."><form class="flex flex-col gap-4" @submit.prevent="changePassword"><UiInput v-model="currentPassword" label="Current password" type="password" autocomplete="current-password" required :disabled="passwordSaving" :error="passwordErrors.current" /><UiInput v-model="newPassword" label="New password" type="password" autocomplete="new-password" required hint="At least 10 characters" :disabled="passwordSaving" :error="passwordErrors.next" /><UiInput v-model="confirmPassword" label="Confirm new password" type="password" autocomplete="new-password" required :disabled="passwordSaving" :error="passwordErrors.confirm" /></form><template #actions><UiButton variant="secondary" :disabled="passwordSaving" @click="passwordOpen = false">Cancel</UiButton><UiButton :loading="passwordSaving" @click="changePassword">Update password</UiButton></template></UiModal>

@@ -54,6 +54,9 @@ func (s *Service) List(ctx context.Context, in ListInput) ([]View, *string, erro
 	if in.ExternalReference != "" {
 		add("links.external_reference = $%d", in.ExternalReference)
 	}
+	if tag := strings.TrimSpace(in.Tag); tag != "" {
+		add("COALESCE(links.metadata->'tags', '[]'::jsonb) ? $%d", strings.ToLower(tag))
+	}
 	if in.CreatedAfter != nil {
 		add("links.created_at >= $%d", *in.CreatedAfter)
 	}
@@ -66,8 +69,8 @@ func (s *Service) List(ctx context.Context, in ListInput) ([]View, *string, erro
 		// which is what a dashboard search box needs.
 		args = append(args, "%"+search+"%")
 		conds = append(conds, fmt.Sprintf(
-			"(links.slug ILIKE $%d OR links.title ILIKE $%d OR links.destination_url ILIKE $%d)",
-			len(args), len(args), len(args)))
+			"(links.slug ILIKE $%d OR links.title ILIKE $%d OR links.destination_url ILIKE $%d OR COALESCE(links.metadata->'tags', '[]'::jsonb) ? lower($%d))",
+			len(args), len(args), len(args), len(args)))
 	}
 
 	if in.Cursor != "" {

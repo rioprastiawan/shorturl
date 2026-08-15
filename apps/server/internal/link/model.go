@@ -125,6 +125,7 @@ type UpdateInput struct {
 type ListInput struct {
 	WorkspaceID       uuid.UUID
 	Search            string
+	Tag               string
 	Status            string
 	DomainID          *uuid.UUID
 	ExternalReference string
@@ -132,4 +133,16 @@ type ListInput struct {
 	CreatedBefore     *time.Time
 	Limit             int
 	Cursor            string
+}
+
+type AuditEntry struct {
+	ID          uuid.UUID       `json:"id"`
+	Action      string          `json:"action"`
+	EntityType  string          `json:"entity_type"`
+	EntityID    *uuid.UUID      `json:"entity_id"`
+	EntityLabel *string         `json:"entity_label"`
+	ActorName   *string         `json:"actor_name"`
+	ActorEmail  *string         `json:"actor_email"`
+	Details     json.RawMessage `json:"details"`
+	CreatedAt   time.Time       `json:"created_at"`
 }

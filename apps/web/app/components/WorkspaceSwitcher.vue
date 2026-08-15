@@ -3,8 +3,10 @@ import { WORKSPACE_SHORTCUT_EVENT } from '~/composables/useDashboardShortcuts'
 
 const props = withDefaults(defineProps<{
   compact?: boolean
+  inverse?: boolean
 }>(), {
   compact: false,
+  inverse: false,
 })
 
 const { workspaces, active, select, create } = useWorkspaces()
@@ -84,15 +86,17 @@ async function submit() {
       type="button"
       class="flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 text-sm transition-colors"
       :class="props.compact
-        ? 'h-9 border-(--color-border) bg-(--color-surface-muted) text-(--color-content) hover:border-(--color-border-strong)'
-        : 'border-white/10 bg-white/8 py-2 text-white hover:bg-white/12'"
+        ? props.inverse
+          ? 'h-9 border-(--color-shell-border) bg-(--color-shell-hover) text-(--color-shell-content) hover:border-(--color-shell-content-muted)'
+          : 'h-9 border-(--color-border) bg-(--color-surface-muted) text-(--color-content) hover:border-(--color-border-strong)'
+        : 'border-(--color-shell-border) bg-(--color-shell-hover) py-2 text-(--color-shell-content) hover:border-(--color-shell-content-muted)'"
       :aria-expanded="open"
       aria-haspopup="listbox"
       :aria-label="props.compact ? `Current workspace: ${active?.name ?? 'none'}. Switch workspace` : undefined"
       @click="open = !open"
     >
       <span class="flex min-w-0 items-center gap-2">
-        <Icon v-if="props.compact" name="lucide:briefcase-business" size="15" class="shrink-0 text-(--color-content-subtle)" />
+        <Icon v-if="props.compact" name="lucide:briefcase-business" size="15" class="shrink-0" :class="props.inverse ? 'text-(--color-shell-content-muted)' : 'text-(--color-content-subtle)'" />
         <span class="min-w-0 truncate font-medium">{{ active?.name ?? 'No workspace' }}</span>
       </span>
       <Icon
@@ -100,7 +104,7 @@ async function submit() {
         size="16"
         class="shrink-0 transition-transform duration-200"
         :class="[
-          props.compact ? 'text-(--color-content-subtle)' : 'text-white/55',
+          props.compact && !props.inverse ? 'text-(--color-content-subtle)' : 'text-(--color-shell-content-muted)',
           open ? 'rotate-180' : '',
         ]"
         aria-hidden="true"

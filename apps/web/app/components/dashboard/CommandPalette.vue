@@ -13,6 +13,7 @@ const query = ref('')
 const input = useTemplateRef<HTMLInputElement>('input')
 const createLinkModal = useCreateLinkModal()
 const { workspaces, active, select } = useWorkspaces()
+const session = useSession()
 
 async function closeThen(run: () => unknown | Promise<unknown>) {
   open.value = false
@@ -41,10 +42,12 @@ const commands = computed<CommandItem[]>(() => [
     ['/dashboard', 'Overview', 'lucide:layout-dashboard'],
     ['/dashboard/links', 'Links', 'lucide:link-2'],
     ['/dashboard/analytics', 'Analytics', 'lucide:chart-no-axes-combined'],
+    ['/dashboard/appearance', 'Appearance', 'lucide:palette'],
     ['/dashboard/domains', 'Domains', 'lucide:globe-2'],
-    ['/dashboard/members', 'Members', 'lucide:users'],
+    ['/dashboard/workspace/members', 'Members', 'lucide:users'],
+    ['/dashboard/workspace/activity', 'Activity log', 'lucide:scroll-text'],
     ['/dashboard/api-keys', 'API integrations', 'lucide:key-round'],
-    ['/dashboard/workspace-settings', 'Workspace settings', 'lucide:settings'],
+    ['/dashboard/workspace/settings', 'Workspace settings', 'lucide:settings'],
     ['/dashboard/account-settings', 'Profile', 'lucide:user-cog'],
   ] as const).map(([to, label, icon]) => ({
     id: `go-${to}`,
@@ -54,6 +57,18 @@ const commands = computed<CommandItem[]>(() => [
     keywords: `navigate page ${label}`,
     run: () => closeThen(async () => { await navigateTo(to) }),
   })),
+  ...(session.user.value?.is_admin ? ([
+    ['/dashboard/system/settings', 'System settings', 'lucide:settings'],
+    ['/dashboard/system/whitelabeling', 'Whitelabeling', 'lucide:badge-check'],
+    ['/dashboard/system/qr-branding', 'QR Branding', 'lucide:qr-code'],
+  ] as const).map(([to, label, icon]) => ({
+    id: `go-${to}`,
+    label: `Go to ${label}`,
+    description: 'Administration',
+    icon,
+    keywords: `navigate admin system ${label}`,
+    run: () => closeThen(async () => { await navigateTo(to) }),
+  })) : []),
   ...workspaces.value.map(workspace => ({
     id: `workspace-${workspace.id}`,
     label: workspace.name,

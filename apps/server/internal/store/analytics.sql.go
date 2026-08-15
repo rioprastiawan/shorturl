@@ -217,6 +217,43 @@ func (q *Queries) ClicksOverTimeForLink(ctx context.Context, arg ClicksOverTimeF
 	return items, nil
 }
 
+const countDomainIssues = `-- name: CountDomainIssues :one
+SELECT count(*) FROM domains WHERE workspace_id = $1 AND status <> 'active'
+`
+
+func (q *Queries) CountDomainIssues(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countDomainIssues, workspaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countExpiringAPIKeys = `-- name: CountExpiringAPIKeys :one
+SELECT count(*) FROM api_keys
+WHERE workspace_id = $1 AND revoked_at IS NULL
+  AND expires_at > now() AND expires_at <= now() + interval '7 days'
+`
+
+func (q *Queries) CountExpiringAPIKeys(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countExpiringAPIKeys, workspaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countExpiringLinks = `-- name: CountExpiringLinks :one
+SELECT count(*) FROM links
+WHERE workspace_id = $1 AND status = 'active'
+  AND expires_at > now() AND expires_at <= now() + interval '7 days'
+`
+
+func (q *Queries) CountExpiringLinks(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countExpiringLinks, workspaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteClickEventsBefore = `-- name: DeleteClickEventsBefore :execrows
 DELETE FROM click_events WHERE clicked_at < $1
 `
