@@ -40,6 +40,30 @@ WHERE workspace_id = sqlc.arg(workspace_id)
   AND bucket >= sqlc.arg(from_time)
   AND bucket < sqlc.arg(to_time);
 
+-- name: FilteredClicksOverTime :many
+SELECT
+    date_trunc(sqlc.arg(granularity)::text, click_hourly.bucket)::timestamptz AS period,
+    sum(click_hourly.clicks)::bigint AS clicks
+FROM click_hourly
+JOIN links ON links.id = click_hourly.link_id
+WHERE click_hourly.workspace_id = sqlc.arg(workspace_id)
+  AND click_hourly.bucket >= sqlc.arg(from_time)
+  AND click_hourly.bucket < sqlc.arg(to_time)
+  AND (sqlc.narg(domain_id)::uuid IS NULL OR links.domain_id = sqlc.narg(domain_id))
+  AND (sqlc.narg(link_id)::uuid IS NULL OR links.id = sqlc.narg(link_id))
+GROUP BY period
+ORDER BY period ASC;
+
+-- name: FilteredClicksInRange :one
+SELECT coalesce(sum(click_hourly.clicks), 0)::bigint
+FROM click_hourly
+JOIN links ON links.id = click_hourly.link_id
+WHERE click_hourly.workspace_id = sqlc.arg(workspace_id)
+  AND click_hourly.bucket >= sqlc.arg(from_time)
+  AND click_hourly.bucket < sqlc.arg(to_time)
+  AND (sqlc.narg(domain_id)::uuid IS NULL OR links.domain_id = sqlc.narg(domain_id))
+  AND (sqlc.narg(link_id)::uuid IS NULL OR links.id = sqlc.narg(link_id));
+
 -- name: ClicksByHourOfDay :many
 SELECT
     extract(hour FROM bucket)::integer AS hour,
@@ -61,6 +85,26 @@ WHERE workspace_id = sqlc.arg(workspace_id)
   AND bucket < sqlc.arg(to_time)
 GROUP BY weekday
 ORDER BY weekday;
+
+-- name: FilteredClicksByHourOfDay :many
+SELECT extract(hour FROM click_hourly.bucket)::integer AS hour, sum(click_hourly.clicks)::bigint AS clicks
+FROM click_hourly
+JOIN links ON links.id = click_hourly.link_id
+WHERE click_hourly.workspace_id = sqlc.arg(workspace_id)
+  AND click_hourly.bucket >= sqlc.arg(from_time) AND click_hourly.bucket < sqlc.arg(to_time)
+  AND (sqlc.narg(domain_id)::uuid IS NULL OR links.domain_id = sqlc.narg(domain_id))
+  AND (sqlc.narg(link_id)::uuid IS NULL OR links.id = sqlc.narg(link_id))
+GROUP BY hour ORDER BY hour;
+
+-- name: FilteredClicksByWeekday :many
+SELECT extract(isodow FROM click_hourly.bucket)::integer AS weekday, sum(click_hourly.clicks)::bigint AS clicks
+FROM click_hourly
+JOIN links ON links.id = click_hourly.link_id
+WHERE click_hourly.workspace_id = sqlc.arg(workspace_id)
+  AND click_hourly.bucket >= sqlc.arg(from_time) AND click_hourly.bucket < sqlc.arg(to_time)
+  AND (sqlc.narg(domain_id)::uuid IS NULL OR links.domain_id = sqlc.narg(domain_id))
+  AND (sqlc.narg(link_id)::uuid IS NULL OR links.id = sqlc.narg(link_id))
+GROUP BY weekday ORDER BY weekday;
 
 -- name: ClicksOverTimeForLink :many
 SELECT
@@ -90,6 +134,19 @@ WHERE click_hourly.workspace_id = sqlc.arg(workspace_id)
 GROUP BY links.id, links.slug, links.title, links.destination_url, domains.hostname
 ORDER BY clicks DESC
 LIMIT sqlc.arg(row_limit);
+
+-- name: FilteredTopLinks :many
+SELECT links.id, links.slug, links.title, links.destination_url, domains.hostname,
+       sum(click_hourly.clicks)::bigint AS clicks
+FROM click_hourly
+JOIN links ON links.id = click_hourly.link_id
+JOIN domains ON domains.id = links.domain_id
+WHERE click_hourly.workspace_id = sqlc.arg(workspace_id)
+  AND click_hourly.bucket >= sqlc.arg(from_time) AND click_hourly.bucket < sqlc.arg(to_time)
+  AND (sqlc.narg(domain_id)::uuid IS NULL OR links.domain_id = sqlc.narg(domain_id))
+  AND (sqlc.narg(link_id)::uuid IS NULL OR links.id = sqlc.narg(link_id))
+GROUP BY links.id, links.slug, links.title, links.destination_url, domains.hostname
+ORDER BY clicks DESC LIMIT sqlc.arg(row_limit);
 
 -- name: TopDimensionValues :many
 SELECT

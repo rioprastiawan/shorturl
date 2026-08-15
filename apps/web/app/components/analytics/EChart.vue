@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import type { ECharts, EChartsCoreOption } from 'echarts/core'
 import { init, use } from 'echarts/core'
-import { BarChart, LineChart, PieChart } from 'echarts/charts'
+import { BarChart, LineChart, MapChart, PieChart } from 'echarts/charts'
 import {
   DatasetComponent,
   GridComponent,
   LegendComponent,
   PolarComponent,
   TooltipComponent,
+  VisualMapComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
-use([BarChart, LineChart, PieChart, DatasetComponent, GridComponent, LegendComponent, PolarComponent, TooltipComponent, CanvasRenderer])
+use([BarChart, LineChart, MapChart, PieChart, DatasetComponent, GridComponent, LegendComponent, PolarComponent, TooltipComponent, VisualMapComponent, CanvasRenderer])
 
 const props = withDefaults(defineProps<{
   option: EChartsCoreOption

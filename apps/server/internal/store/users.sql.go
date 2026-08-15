@@ -147,36 +147,6 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 	return err
 }
 
-const updateUserProfile = `-- name: UpdateUserProfile :one
-UPDATE users
-SET name = $2, email = $3
-WHERE id = $1
-RETURNING id, name, email, password_hash, is_admin, created_at, updated_at, language, timezone
-`
-
-type UpdateUserProfileParams struct {
-	ID    uuid.UUID
-	Name  string
-	Email string
-}
-
-func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
-	row := q.db.QueryRow(ctx, updateUserProfile, arg.ID, arg.Name, arg.Email)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Email,
-		&i.PasswordHash,
-		&i.IsAdmin,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Language,
-		&i.Timezone,
-	)
-	return i, err
-}
-
 const updateUserPreferences = `-- name: UpdateUserPreferences :one
 UPDATE users
 SET language = $2, timezone = $3
@@ -192,6 +162,36 @@ type UpdateUserPreferencesParams struct {
 
 func (q *Queries) UpdateUserPreferences(ctx context.Context, arg UpdateUserPreferencesParams) (User, error) {
 	row := q.db.QueryRow(ctx, updateUserPreferences, arg.ID, arg.Language, arg.Timezone)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.PasswordHash,
+		&i.IsAdmin,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Language,
+		&i.Timezone,
+	)
+	return i, err
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE users
+SET name = $2, email = $3
+WHERE id = $1
+RETURNING id, name, email, password_hash, is_admin, created_at, updated_at, language, timezone
+`
+
+type UpdateUserProfileParams struct {
+	ID    uuid.UUID
+	Name  string
+	Email string
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserProfile, arg.ID, arg.Name, arg.Email)
 	var i User
 	err := row.Scan(
 		&i.ID,

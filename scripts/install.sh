@@ -92,6 +92,16 @@ set_value() {
   rm -f "$tmp"
 }
 
+# Source archives carry their release number in VERSION. Copy it into .env so
+# local Docker builds expose the same value in both the server and dashboard.
+# An explicit custom VERSION is preserved on subsequent runs.
+source_version="$(tr -d '[:space:]' < VERSION)"
+configured_version="$(current_value VERSION)"
+if [[ -z "$configured_version" || "$configured_version" == "dev" ]]; then
+  set_value VERSION "$source_version"
+  ok "version $source_version"
+fi
+
 # A value counts as unset if it is empty or still the .env.example placeholder.
 needs_secret() {
   local value

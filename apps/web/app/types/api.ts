@@ -173,7 +173,7 @@ export interface ValueStat {
 
 export interface ClickSummary {
   total_clicks: number
-  unique_visitors: number
+  unique_visitors: number | null
   previous_clicks: number
   growth_percent: number | null
   average_clicks_per_day: number
@@ -197,6 +197,8 @@ export interface ClicksReport {
   countries: ValueStat[]
   hours: ValueStat[]
   weekdays: ValueStat[]
+  /** False when domain/link filtering makes workspace dimension rollups inapplicable. */
+  breakdowns_scoped: boolean
 }
 
 /**

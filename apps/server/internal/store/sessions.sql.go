@@ -81,7 +81,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID uuid.UUID) erro
 const getSessionWithUser = `-- name: GetSessionWithUser :one
 SELECT
     sessions.id, sessions.user_id, sessions.token_hash, sessions.user_agent, sessions.ip_hash, sessions.expires_at, sessions.last_seen_at, sessions.created_at,
-    users.id, users.name, users.email, users.password_hash, users.is_admin, users.created_at, users.updated_at
+    users.id, users.name, users.email, users.password_hash, users.is_admin, users.created_at, users.updated_at, users.language, users.timezone
 FROM sessions
 JOIN users ON users.id = sessions.user_id
 WHERE sessions.token_hash = $1
@@ -112,6 +112,8 @@ func (q *Queries) GetSessionWithUser(ctx context.Context, tokenHash string) (Get
 		&i.User.IsAdmin,
 		&i.User.CreatedAt,
 		&i.User.UpdatedAt,
+		&i.User.Language,
+		&i.User.Timezone,
 	)
 	return i, err
 }

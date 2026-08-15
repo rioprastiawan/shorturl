@@ -16,6 +16,17 @@ const { apiKeys } = useServices()
 
 const canManage = computed(() => ws.role.value === 'owner' || ws.role.value === 'admin')
 
+const API_KEY_COLUMNS = [
+  { key: 'name', label: 'Name' },
+  { key: 'prefix', label: 'Prefix' },
+  { key: 'scopes', label: 'Scopes' },
+  { key: 'last_used', label: 'Last used' },
+  { key: 'created', label: 'Created' },
+  { key: 'expires', label: 'Expires' },
+  { key: 'status', label: 'Status' },
+  { key: 'actions', label: 'Actions', align: 'right' as const, srOnly: true },
+]
+
 // -------------------------------------------------------------------- list
 
 const keys = ref<ApiKey[]>([])
@@ -287,7 +298,7 @@ func main() {
       </div>
       <div class="flex gap-2">
         <UiButton variant="secondary" to="/dashboard/api-docs">
-          <Icon name="lucide:book-open-code" size="15" /> API docs
+          <Icon name="lucide:book-open-text" size="15" /> API docs
         </UiButton>
         <UiButton v-if="canManage" @click="openCreate">
           Create key
@@ -359,71 +370,37 @@ func main() {
           </UiButton>
         </UiEmptyState>
 
-        <div v-else class="overflow-x-auto">
-          <table class="w-full min-w-[56rem] text-left text-sm">
-            <thead>
-              <tr class="border-b border-(--color-border) text-xs uppercase tracking-wide text-(--color-content-subtle)">
-                <th scope="col" class="px-5 py-3 font-medium">
-                  Name
-                </th>
-                <th scope="col" class="px-5 py-3 font-medium">
-                  Prefix
-                </th>
-                <th scope="col" class="px-5 py-3 font-medium">
-                  Scopes
-                </th>
-                <th scope="col" class="px-5 py-3 font-medium">
-                  Last used
-                </th>
-                <th scope="col" class="px-5 py-3 font-medium">
-                  Created
-                </th>
-                <th scope="col" class="px-5 py-3 font-medium">
-                  Expires
-                </th>
-                <th scope="col" class="px-5 py-3 font-medium">
-                  Status
-                </th>
-                <th scope="col" class="px-5 py-3 font-medium">
-                  <span class="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="key in keys"
-                :key="key.id"
-                class="border-b border-(--color-border) last:border-0"
-              >
-                <td class="px-5 py-3 font-medium">
+        <UiDataTable v-else :columns="API_KEY_COLUMNS" :rows="keys" row-key="id">
+          <template #row="{ row: key }">
+                <UiTableCell class="font-medium">
                   {{ key.name }}
-                </td>
-                <td class="px-5 py-3">
+                </UiTableCell>
+                <UiTableCell>
                   <code class="font-mono text-xs text-(--color-content-muted)">{{ key.key_prefix }}…</code>
-                </td>
-                <td class="px-5 py-3">
+                </UiTableCell>
+                <UiTableCell>
                   <div class="flex flex-wrap gap-1">
                     <UiBadge v-for="scope in key.scopes" :key="scope" tone="info">
                       {{ scope }}
                     </UiBadge>
                     <span v-if="!key.scopes.length" class="text-xs text-(--color-content-subtle)">none</span>
                   </div>
-                </td>
-                <td class="whitespace-nowrap px-5 py-3 text-(--color-content-muted)">
+                </UiTableCell>
+                <UiTableCell muted nowrap>
                   {{ formatDateTime(key.last_used_at) }}
-                </td>
-                <td class="whitespace-nowrap px-5 py-3 text-(--color-content-muted)">
+                </UiTableCell>
+                <UiTableCell muted nowrap>
                   {{ formatDateTime(key.created_at) }}
-                </td>
-                <td class="whitespace-nowrap px-5 py-3 text-(--color-content-muted)">
+                </UiTableCell>
+                <UiTableCell muted nowrap>
                   {{ key.expires_at ? formatDateTime(key.expires_at) : 'Never' }}
-                </td>
-                <td class="px-5 py-3">
+                </UiTableCell>
+                <UiTableCell>
                   <UiBadge :tone="keyState(key).tone" dot>
                     {{ keyState(key).label }}
                   </UiBadge>
-                </td>
-                <td class="px-5 py-3 text-right">
+                </UiTableCell>
+                <UiTableCell align="right">
                   <UiButton
                     v-if="!key.revoked_at"
                     variant="ghost"
@@ -432,10 +409,9 @@ func main() {
                   >
                     <span class="text-(--color-danger)">Revoke</span>
                   </UiButton>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </UiTableCell>
+          </template>
+          <template #footer>
           <div v-if="cursorHistory.length || nextCursor" class="flex items-center justify-between border-t border-(--color-border) px-3 py-2.5">
             <p class="text-xs text-(--color-content-muted)">Page {{ pageNumber }} · Up to 25 keys per page</p>
             <div class="flex gap-2">
@@ -447,7 +423,8 @@ func main() {
               </UiButton>
             </div>
           </div>
-        </div>
+          </template>
+        </UiDataTable>
       </UiCard>
 
       <!-- Developer documentation lives beside key management so a fresh
@@ -507,7 +484,7 @@ func main() {
       <section class="flex flex-col gap-4 rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-4 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-start gap-3">
           <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-(--color-accent)/12 text-(--color-accent)">
-            <Icon name="lucide:book-open-code" size="18" />
+            <Icon name="lucide:book-open-text" size="18" />
           </span>
           <div>
             <h2 class="text-sm font-semibold">Need the complete API reference?</h2>

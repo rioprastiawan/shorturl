@@ -62,6 +62,24 @@ For a Dokploy deployment backed by images published from GitHub Actions, use
 [`docker-compose.dokploy.yml`](docker-compose.dokploy.yml) and follow
 [`docs/dokploy.md`](docs/dokploy.md).
 
+### Versions and updates
+
+The source version is recorded in [`VERSION`](VERSION). Release tags use
+semantic versions such as `v1.2.3`; pushing one publishes matching server and
+web images to GHCR and creates a GitHub Release with generated notes. The
+dashboard shows its installed build under **Account Settings → Version** and
+checks the repository's latest GitHub Release. The check is informational
+only: an unavailable GitHub API never blocks the app or performs an automatic
+upgrade.
+
+To publish a release, update `VERSION`, commit it, then create and push a
+matching tag:
+
+```bash
+git tag v1.2.3
+git push origin main v1.2.3
+```
+
 ## Use the API
 
 ```bash

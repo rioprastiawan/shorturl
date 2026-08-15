@@ -3,11 +3,35 @@ package analytics
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/rioprastiawan/shorturl/apps/server/internal/httpx"
 )
+
+func TestFilterFromRequest(t *testing.T) {
+	domainID := uuid.New()
+	linkID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/?domain_id="+domainID.String()+"&link_id="+linkID.String(), nil)
+	filter, err := filterFromRequest(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if filter.DomainID == nil || *filter.DomainID != domainID {
+		t.Fatalf("domain filter not parsed")
+	}
+	if filter.LinkID == nil || *filter.LinkID != linkID {
+		t.Fatalf("link filter not parsed")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/?domain_id=not-a-uuid", nil)
+	if _, err := filterFromRequest(req); err == nil {
+		t.Fatal("expected invalid UUID error")
+	}
+}
 
 func TestParseRange(t *testing.T) {
 	now := time.Date(2026, 8, 15, 13, 30, 0, 0, time.UTC)

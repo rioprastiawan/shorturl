@@ -52,7 +52,7 @@ type DimensionCount struct {
 // represent growth from zero.
 type ClickSummary struct {
 	TotalClicks         int64    `json:"total_clicks"`
-	UniqueVisitors      int64    `json:"unique_visitors"`
+	UniqueVisitors      *int64   `json:"unique_visitors"`
 	PreviousClicks      int64    `json:"previous_clicks"`
 	GrowthPercent       *float64 `json:"growth_percent"`
 	AverageClicksPerDay float64  `json:"average_clicks_per_day"`
@@ -77,6 +77,8 @@ type ClicksResponse struct {
 	Countries    []DimensionCount `json:"countries"`
 	Hours        []DimensionCount `json:"hours"`
 	Weekdays     []DimensionCount `json:"weekdays"`
+	// Dimensions are workspace rollups and are omitted for domain/link filters.
+	BreakdownsScoped bool `json:"breakdowns_scoped"`
 }
 
 // LinkAnalyticsResponse is the per-link view.

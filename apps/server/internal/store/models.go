@@ -127,10 +127,19 @@ type User struct {
 	Email        string
 	PasswordHash string
 	IsAdmin      bool
-	Language     string
-	Timezone     string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	Language     string
+	Timezone     string
+}
+
+type UserTwoFactor struct {
+	UserID             uuid.UUID
+	SecretCiphertext   []byte
+	RecoveryCodeHashes []string
+	Enabled            bool
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type Workspace struct {
@@ -140,6 +149,18 @@ type Workspace struct {
 	OwnerUserID uuid.UUID
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type WorkspaceInvitation struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	TokenHash   string
+	Role        string
+	CreatedBy   *uuid.UUID
+	ExpiresAt   time.Time
+	AcceptedAt  *time.Time
+	CreatedAt   time.Time
+	RevokedAt   *time.Time
 }
 
 type WorkspaceMember struct {

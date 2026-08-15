@@ -199,6 +199,7 @@ services:
       dockerfile: docker/web/Dockerfile
       args:
         NUXT_PUBLIC_API_BASE_URL: ${NUXT_PUBLIC_API_BASE_URL:-/api/v1}
+        VERSION: ${VERSION:-dev}
     restart: unless-stopped
     depends_on:
       server:

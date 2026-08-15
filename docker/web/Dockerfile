@@ -20,7 +20,9 @@ COPY apps/web/ ./
 # Baked into the bundle at build time. The default is a same-origin relative
 # path, so the image stays portable across deployments and hostnames.
 ARG NUXT_PUBLIC_API_BASE_URL=/api/v1
+ARG VERSION=dev
 ENV NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL}
+ENV NUXT_PUBLIC_APP_VERSION=${VERSION}
 
 RUN bun run generate
 

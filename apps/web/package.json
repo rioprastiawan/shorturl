@@ -13,10 +13,13 @@
   "dependencies": {
     "@nuxt/icon": "^2.5.0",
     "echarts": "^6.1.0",
+    "i18n-iso-countries": "^7.14.0",
     "nuxt": "^4.5.2",
     "qrcode": "^1.5.4",
+    "topojson-client": "^3.1.0",
     "vue": "^3.5.41",
-    "vue-router": "^4.6.3"
+    "vue-router": "^4.6.3",
+    "world-atlas": "^2.0.2"
   },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.123",
@@ -24,6 +27,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.2.0",
     "@types/qrcode": "^1.5.6",
+    "@types/topojson-client": "^3.1.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vue-tsc": "^3.1.4"

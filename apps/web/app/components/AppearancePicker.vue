@@ -21,7 +21,7 @@ const options = computed(() => [
         v-for="option in options"
         :key="option.value"
         type="button"
-        class="flex items-center justify-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold transition-all"
+        class="flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-semibold transition-all"
         :class="colorMode.preference === option.value
           ? compact
             ? 'bg-white text-[#172033] shadow-sm dark:bg-[#293341] dark:text-white'
@@ -33,7 +33,7 @@ const options = computed(() => [
         :title="option.label"
         @click="colorMode.preference = option.value"
       >
-        <Icon :name="option.icon" size="16" />
+        <Icon :name="option.icon" size="18" class="shrink-0" />
         <span v-if="!compact">{{ option.label }}</span>
         <span v-else class="sr-only">{{ option.label }}</span>
       </button>

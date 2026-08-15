@@ -47,6 +47,13 @@ type Range struct {
 	Granularity string
 }
 
+// Filter narrows rollups without ever allowing a cross-workspace read.
+// Both IDs are optional; the workspace predicate remains mandatory in SQL.
+type Filter struct {
+	DomainID *uuid.UUID
+	LinkID   *uuid.UUID
+}
+
 // Days returns the window as whole UTC days, which is how
 // click_dimension_daily is keyed.
 func (r Range) Days() (from, to time.Time) {
@@ -195,12 +202,14 @@ func (s *Service) Overview(ctx context.Context, workspaceID uuid.UUID) (Overview
 }
 
 // Clicks returns the time series plus every breakdown the analytics page shows.
-func (s *Service) Clicks(ctx context.Context, workspaceID uuid.UUID, rng Range) (ClicksResponse, error) {
-	series, err := s.q.ClicksOverTime(ctx, store.ClicksOverTimeParams{
+func (s *Service) Clicks(ctx context.Context, workspaceID uuid.UUID, rng Range, filter Filter) (ClicksResponse, error) {
+	series, err := s.q.FilteredClicksOverTime(ctx, store.FilteredClicksOverTimeParams{
 		Granularity: rng.Granularity,
 		WorkspaceID: workspaceID,
 		FromTime:    rng.From,
 		ToTime:      rng.To,
+		DomainID:    filter.DomainID,
+		LinkID:      filter.LinkID,
 	})
 	if err != nil {
 		return ClicksResponse{}, httpx.Internal(err)
@@ -214,22 +223,27 @@ func (s *Service) Clicks(ctx context.Context, workspaceID uuid.UUID, rng Range) 
 	}
 
 	span := rng.To.Sub(rng.From)
-	previousClicks, err := s.q.ClicksInRange(ctx, store.ClicksInRangeParams{
+	previousClicks, err := s.q.FilteredClicksInRange(ctx, store.FilteredClicksInRangeParams{
 		WorkspaceID: workspaceID,
 		FromTime:    rng.From.Add(-span),
 		ToTime:      rng.From,
+		DomainID:    filter.DomainID,
+		LinkID:      filter.LinkID,
 	})
 	if err != nil {
 		return ClicksResponse{}, httpx.Internal(err)
 	}
 	fromDay, toDay := rng.Days()
-	uniqueVisitors, err := s.q.UniqueVisitorsInRange(ctx, store.UniqueVisitorsInRangeParams{
-		WorkspaceID: workspaceID,
-		FromDay:     fromDay,
-		ToDay:       toDay,
-	})
-	if err != nil {
-		return ClicksResponse{}, httpx.Internal(err)
+	var uniqueVisitors *int64
+	filtered := filter.DomainID != nil || filter.LinkID != nil
+	if !filtered {
+		value, queryErr := s.q.UniqueVisitorsInRange(ctx, store.UniqueVisitorsInRangeParams{
+			WorkspaceID: workspaceID, FromDay: fromDay, ToDay: toDay,
+		})
+		if queryErr != nil {
+			return ClicksResponse{}, httpx.Internal(queryErr)
+		}
+		uniqueVisitors = &value
 	}
 	var growth *float64
 	if previousClicks > 0 {
@@ -241,10 +255,12 @@ func (s *Service) Clicks(ctx context.Context, workspaceID uuid.UUID, rng Range) 
 		days = 1
 	}
 
-	top, err := s.q.TopLinks(ctx, store.TopLinksParams{
+	top, err := s.q.FilteredTopLinks(ctx, store.FilteredTopLinksParams{
 		WorkspaceID: workspaceID,
 		FromTime:    rng.From,
 		ToTime:      rng.To,
+		DomainID:    filter.DomainID,
+		LinkID:      filter.LinkID,
 		RowLimit:    topLinkLimit,
 	})
 	if err != nil {
@@ -275,31 +291,34 @@ func (s *Service) Clicks(ctx context.Context, workspaceID uuid.UUID, rng Range) 
 			GrowthPercent:       growth,
 			AverageClicksPerDay: float64(totalClicks) / days,
 		},
-		TopLinks: links,
+		TopLinks:         links,
+		BreakdownsScoped: !filtered,
 	}
 
-	for _, breakdown := range []struct {
-		dimension string
-		target    *[]DimensionCount
-	}{
-		{DimensionReferrer, &out.Referrers},
-		{DimensionUTMSource, &out.UTMSources},
-		{DimensionUTMMedium, &out.UTMMediums},
-		{DimensionUTMCampaign, &out.UTMCampaigns},
-		{DimensionDevice, &out.Devices},
-		{DimensionBrowser, &out.Browsers},
-		{DimensionOS, &out.OS},
-		{DimensionCountry, &out.Countries},
-	} {
-		values, err := s.dimension(ctx, workspaceID, breakdown.dimension, rng)
-		if err != nil {
-			return ClicksResponse{}, err
+	if !filtered {
+		for _, breakdown := range []struct {
+			dimension string
+			target    *[]DimensionCount
+		}{
+			{DimensionReferrer, &out.Referrers},
+			{DimensionUTMSource, &out.UTMSources},
+			{DimensionUTMMedium, &out.UTMMediums},
+			{DimensionUTMCampaign, &out.UTMCampaigns},
+			{DimensionDevice, &out.Devices},
+			{DimensionBrowser, &out.Browsers},
+			{DimensionOS, &out.OS},
+			{DimensionCountry, &out.Countries},
+		} {
+			values, err := s.dimension(ctx, workspaceID, breakdown.dimension, rng)
+			if err != nil {
+				return ClicksResponse{}, err
+			}
+			*breakdown.target = values
 		}
-		*breakdown.target = values
 	}
 
-	hours, err := s.q.ClicksByHourOfDay(ctx, store.ClicksByHourOfDayParams{
-		WorkspaceID: workspaceID, FromTime: rng.From, ToTime: rng.To,
+	hours, err := s.q.FilteredClicksByHourOfDay(ctx, store.FilteredClicksByHourOfDayParams{
+		WorkspaceID: workspaceID, FromTime: rng.From, ToTime: rng.To, DomainID: filter.DomainID, LinkID: filter.LinkID,
 	})
 	if err != nil {
 		return ClicksResponse{}, httpx.Internal(err)
@@ -308,8 +327,8 @@ func (s *Service) Clicks(ctx context.Context, workspaceID uuid.UUID, rng Range) 
 		out.Hours = append(out.Hours, DimensionCount{Value: fmt.Sprintf("%02d:00 UTC", row.Hour), Clicks: row.Clicks})
 	}
 	weekdayNames := [...]string{"", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
-	weekdays, err := s.q.ClicksByWeekday(ctx, store.ClicksByWeekdayParams{
-		WorkspaceID: workspaceID, FromTime: rng.From, ToTime: rng.To,
+	weekdays, err := s.q.FilteredClicksByWeekday(ctx, store.FilteredClicksByWeekdayParams{
+		WorkspaceID: workspaceID, FromTime: rng.From, ToTime: rng.To, DomainID: filter.DomainID, LinkID: filter.LinkID,
 	})
 	if err != nil {
 		return ClicksResponse{}, httpx.Internal(err)

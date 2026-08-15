@@ -29,11 +29,13 @@ jobs:
             server:
               - 'apps/server/**'
               - 'docker/server/**'
+              - 'VERSION'
               - '.dockerignore'
               - '.github/workflows/ci.yml'
             web:
               - 'apps/web/**'
               - 'docker/web/**'
+              - 'VERSION'
               - '.dockerignore'
               - '.github/workflows/ci.yml'
 

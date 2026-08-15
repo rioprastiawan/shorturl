@@ -31,6 +31,16 @@ const STATUS_OPTIONS = [
   { value: 'archived', label: 'Archived' },
 ]
 
+const LINK_COLUMNS = [
+  { key: 'short_url', label: 'Short URL' },
+  { key: 'destination', label: 'Destination' },
+  { key: 'title', label: 'Title' },
+  { key: 'status', label: 'Status' },
+  { key: 'clicks', label: 'Clicks', align: 'right' as const },
+  { key: 'created', label: 'Created' },
+  { key: 'actions', label: 'Actions', align: 'right' as const, srOnly: true },
+]
+
 // Debounced so typing "newsletter" is one request, not ten.
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 watch(search, (value) => {
@@ -304,40 +314,9 @@ async function confirmDelete() {
         </UiButton>
       </UiEmptyState>
 
-      <div v-else class="overflow-x-auto">
-        <table class="w-full min-w-[56rem] text-left text-sm">
-          <thead>
-            <tr class="border-b border-(--color-border) text-xs uppercase tracking-wide text-(--color-content-subtle)">
-              <th scope="col" class="px-5 py-3 font-medium">
-                Short URL
-              </th>
-              <th scope="col" class="px-5 py-3 font-medium">
-                Destination
-              </th>
-              <th scope="col" class="px-5 py-3 font-medium">
-                Title
-              </th>
-              <th scope="col" class="px-5 py-3 font-medium">
-                Status
-              </th>
-              <th scope="col" class="px-5 py-3 text-right font-medium">
-                Clicks
-              </th>
-              <th scope="col" class="px-5 py-3 font-medium">
-                Created
-              </th>
-              <th scope="col" class="px-5 py-3 font-medium">
-                <span class="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="link in items"
-              :key="link.id"
-              class="border-b border-(--color-border) last:border-0 hover:bg-(--color-surface-muted)"
-            >
-              <td class="px-5 py-3">
+      <UiDataTable v-else :columns="LINK_COLUMNS" :rows="items" row-key="id">
+        <template #row="{ row: link }">
+              <UiTableCell>
                 <div class="flex items-center gap-1">
                   <LinkPreviewCard
                     v-if="previewOf(link)"
@@ -354,8 +333,8 @@ async function confirmDelete() {
                   </NuxtLink>
                   <UiCopyButton :value="link.short_url" label="Copy" />
                 </div>
-              </td>
-              <td class="px-5 py-3 text-(--color-content-muted)">
+              </UiTableCell>
+              <UiTableCell muted>
                 <span class="flex items-center gap-2" :title="link.destination_url">
                   <img
                     v-if="previewOf(link)?.favicon_url"
@@ -367,38 +346,37 @@ async function confirmDelete() {
                   >
                   {{ truncateMiddle(link.destination_url, 48) }}
                 </span>
-              </td>
-              <td class="px-5 py-3">
+              </UiTableCell>
+              <UiTableCell>
                 <span v-if="link.title" :title="link.title">{{ truncateMiddle(link.title, 32) }}</span>
                 <span v-else class="text-(--color-content-subtle)">—</span>
-              </td>
-              <td class="px-5 py-3">
+              </UiTableCell>
+              <UiTableCell>
                 <LinkStatusBadge :status="link.status" />
-              </td>
-              <td class="px-5 py-3 text-right tabular-nums">
+              </UiTableCell>
+              <UiTableCell align="right" class="tabular-nums">
                 {{ formatNumber(link.click_count) }}
-              </td>
-              <td class="whitespace-nowrap px-5 py-3 text-(--color-content-muted)">
+              </UiTableCell>
+              <UiTableCell muted nowrap>
                 {{ formatDate(link.created_at) }}
-              </td>
-              <td class="px-5 py-3 text-right">
+              </UiTableCell>
+              <UiTableCell align="right">
                 <LinkRowActions
                   :link-id="link.id"
                   @copy="copyShortUrl(link)"
                   @qr="showQr(link)"
                   @delete="askDelete(link)"
                 />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
+              </UiTableCell>
+        </template>
+        <template #footer>
         <div v-if="nextCursor" class="flex justify-center border-t border-(--color-border) px-5 py-4">
           <UiButton variant="secondary" :loading="loadingMore" @click="load(true)">
             Load more
           </UiButton>
         </div>
-      </div>
+        </template>
+      </UiDataTable>
     </UiCard>
 
     <UiModal

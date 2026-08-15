@@ -43,6 +43,11 @@ type Querier interface {
 	// aggregate dimensions remain tiny and are retained indefinitely.
 	DeleteVisitorDimensionsBefore(ctx context.Context, day time.Time) (int64, error)
 	DeleteWorkspace(ctx context.Context, id uuid.UUID) error
+	FilteredClicksByHourOfDay(ctx context.Context, arg FilteredClicksByHourOfDayParams) ([]FilteredClicksByHourOfDayRow, error)
+	FilteredClicksByWeekday(ctx context.Context, arg FilteredClicksByWeekdayParams) ([]FilteredClicksByWeekdayRow, error)
+	FilteredClicksInRange(ctx context.Context, arg FilteredClicksInRangeParams) (int64, error)
+	FilteredClicksOverTime(ctx context.Context, arg FilteredClicksOverTimeParams) ([]FilteredClicksOverTimeRow, error)
+	FilteredTopLinks(ctx context.Context, arg FilteredTopLinksParams) ([]FilteredTopLinksRow, error)
 	GetAPIKeyByPrefix(ctx context.Context, keyPrefix string) (ApiKey, error)
 	GetDefaultDomain(ctx context.Context, workspaceID uuid.UUID) (Domain, error)
 	GetDomain(ctx context.Context, id uuid.UUID) (Domain, error)

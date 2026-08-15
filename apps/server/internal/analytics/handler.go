@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/rioprastiawan/shorturl/apps/server/internal/authctx"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/httpx"
@@ -57,12 +58,41 @@ func (h *Handler) clicks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := h.svc.Clicks(r.Context(), m.WorkspaceID, rng)
+	filter, err := filterFromRequest(r)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+
+	data, err := h.svc.Clicks(r.Context(), m.WorkspaceID, rng, filter)
 	if err != nil {
 		httpx.Error(w, r, err)
 		return
 	}
 	httpx.Data(w, http.StatusOK, data)
+}
+
+func filterFromRequest(r *http.Request) (Filter, error) {
+	parse := func(name string) (*uuid.UUID, error) {
+		raw := r.URL.Query().Get(name)
+		if raw == "" {
+			return nil, nil
+		}
+		value, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, httpx.BadRequest(name + " must be a valid UUID")
+		}
+		return &value, nil
+	}
+	domainID, err := parse("domain_id")
+	if err != nil {
+		return Filter{}, err
+	}
+	linkID, err := parse("link_id")
+	if err != nil {
+		return Filter{}, err
+	}
+	return Filter{DomainID: domainID, LinkID: linkID}, nil
 }
 
 // LinkAnalytics serves the per-link report. It is exported because it is

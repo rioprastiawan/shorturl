@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ClicksReport } from '~/types/api'
+import type { ClicksReport, Domain, Link } from '~/types/api'
 import type { CustomRange, PresetRange } from '~/components/analytics/types'
 import AnalyticsBreakdown from '~/components/analytics/Breakdown.vue'
 import AnalyticsChart from '~/components/analytics/Chart.vue'
@@ -13,10 +13,15 @@ definePageMeta({ middleware: 'auth' })
 useHead({ title: 'Analytics · ShortURL' })
 
 const ws = useWorkspaces()
-const { analytics } = useServices()
+const { analytics, domains, links } = useServices()
 
 const range = ref<PresetRange>('7d')
 const customRange = ref<CustomRange | null>(null)
+const domainId = ref<string | null>(null)
+const linkId = ref<string | null>(null)
+const filterDomains = ref<Domain[]>([])
+const filterLinks = ref<Link[]>([])
+const filtersLoading = ref(false)
 const report = ref<ClicksReport | null>(null)
 const loading = ref(true)
 const loadError = ref<string | null>(null)
@@ -33,6 +38,8 @@ async function load() {
     report.value = await analytics.clicks(workspaceId, {
       range: range.value,
       ...(range.value === 'custom' && customRange.value ? customRange.value : {}),
+      domain_id: domainId.value ?? undefined,
+      link_id: linkId.value ?? undefined,
     })
   } catch (error) {
     loadError.value = error instanceof ApiError ? error.message : 'Could not load analytics.'
@@ -42,7 +49,46 @@ async function load() {
   }
 }
 
-watch([range, () => ws.activeId.value], () => load(), { immediate: true })
+watch([range, domainId, linkId, () => ws.activeId.value], () => load(), { immediate: true })
+
+async function loadFilterOptions() {
+  const workspaceId = ws.activeId.value
+  if (!workspaceId) return
+  filtersLoading.value = true
+  try {
+    const [domainResult, linkResult] = await Promise.all([
+      domains.list(workspaceId),
+      links.list(workspaceId, { domain_id: domainId.value ?? undefined, limit: 100 }),
+    ])
+    filterDomains.value = domainResult.data
+    filterLinks.value = linkResult.data
+  } finally {
+    filtersLoading.value = false
+  }
+}
+
+watch(() => ws.activeId.value, () => {
+  domainId.value = null
+  linkId.value = null
+  loadFilterOptions()
+}, { immediate: true })
+
+watch(domainId, () => {
+  linkId.value = null
+  loadFilterOptions()
+})
+
+const domainOptions = computed(() => [
+  { value: '', label: 'All domains' },
+  ...filterDomains.value.map(domain => ({ value: domain.id, label: domain.hostname })),
+])
+const linkOptions = computed(() => [
+  { value: '', label: 'All links' },
+  ...filterLinks.value.map(link => ({ value: link.id, label: `${link.domain}/${link.slug}${link.title ? ` · ${link.title}` : ''}` })),
+])
+const selectedDomain = computed({ get: () => domainId.value ?? '', set: value => (domainId.value = value || null) })
+const selectedLink = computed({ get: () => linkId.value ?? '', set: value => (linkId.value = value || null) })
+const hasScopeFilter = computed(() => !!domainId.value || !!linkId.value)
 
 function applyCustomRange(value: CustomRange) {
   customRange.value = value
@@ -79,8 +125,7 @@ const breakdowns = computed(() => [
   { key: 'utm_campaigns', title: 'UTM campaigns', items: report.value?.utm_campaigns ?? [], empty: 'No utm_campaign' },
   { key: 'browsers', title: 'Browsers', items: report.value?.browsers ?? [], empty: 'Unknown' },
   { key: 'os', title: 'Operating systems', items: report.value?.os ?? [], empty: 'Unknown' },
-  { key: 'countries', title: 'Countries', items: report.value?.countries ?? [], empty: 'Unknown' },
-].filter(card => card.items.length > 0))
+].filter(card => report.value?.breakdowns_scoped && card.items.length > 0))
 
 const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 0)
 </script>
@@ -97,13 +142,19 @@ const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 
           Clicks across every link in this workspace.
         </p>
       </div>
-      <AnalyticsRangePicker
-        v-model="range"
-        :custom-range="customRange"
-        :disabled="loading"
-        @custom="applyCustomRange"
-      />
     </header>
+
+    <section class="rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-3 shadow-sm" aria-label="Analytics filters">
+      <div class="grid items-end gap-3 lg:grid-cols-[minmax(10rem,1fr)_minmax(12rem,1.35fr)_auto]">
+        <UiSelect v-model="selectedDomain" label="Domain" :options="domainOptions" :disabled="filtersLoading" />
+        <UiSelect v-model="selectedLink" label="Link" :options="linkOptions" searchable search-placeholder="Search links…" :disabled="filtersLoading" />
+        <div><p class="mb-1 text-sm font-medium">Date range</p><AnalyticsRangePicker v-model="range" :custom-range="customRange" :disabled="loading" @custom="applyCustomRange" /></div>
+      </div>
+      <div v-if="hasScopeFilter" class="mt-3 flex items-center justify-between gap-3 border-t border-(--color-border) pt-3">
+        <p class="text-xs text-(--color-content-muted)">Trend, totals and timing are filtered. Audience breakdowns are hidden because those rollups are workspace-wide.</p>
+        <UiButton variant="ghost" size="sm" @click="domainId = null; linkId = null">Reset filters</UiButton>
+      </div>
+    </section>
 
     <div v-if="loading" class="flex flex-col gap-4" role="status" aria-label="Loading analytics">
       <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -148,9 +199,9 @@ const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 
         </div>
         <div class="rounded-lg border border-(--color-border) bg-(--color-surface-raised) px-4 py-3">
           <p class="text-2xl font-semibold tabular-nums tracking-tight">
-            {{ formatNumber(report?.summary?.unique_visitors ?? 0) }}
+            {{ report?.summary?.unique_visitors == null ? '—' : formatNumber(report.summary.unique_visitors) }}
           </p>
-          <p class="mt-0.5 text-xs text-(--color-content-muted)">Unique visitors</p>
+          <p class="mt-0.5 text-xs text-(--color-content-muted)">{{ hasScopeFilter ? 'Unavailable for scoped filters' : 'Unique visitors' }}</p>
         </div>
         <div class="rounded-lg border border-(--color-border) bg-(--color-surface-raised) px-4 py-3">
           <p
@@ -195,6 +246,8 @@ const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 
         :hours="report?.hours ?? []"
         :weekdays="report?.weekdays ?? []"
       />
+
+      <AnalyticsCountryMap v-if="report?.breakdowns_scoped && report.countries.length" :countries="report.countries" />
 
       <UiCard v-if="topLinks.length" title="Top links" :padded="false">
         <div class="overflow-x-auto">

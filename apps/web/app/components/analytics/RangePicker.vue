@@ -10,6 +10,11 @@ const emit = defineEmits<{ custom: [range: CustomRange] }>()
 const model = defineModel<PresetRange>({ required: true })
 
 const customOpen = ref(false)
+const customTrigger = useTemplateRef<HTMLElement>('customTrigger')
+const customPanel = useTemplateRef<HTMLElement>('customPanel')
+const { floatingStyle } = useFloatingPanel(customTrigger, customOpen, {
+  align: 'end', width: 480, estimatedHeight: 330, flipThreshold: 180,
+})
 const from = ref('')
 const to = ref('')
 const error = ref('')
@@ -47,6 +52,13 @@ function applyCustom() {
   model.value = 'custom'
   customOpen.value = false
 }
+
+watch(customOpen, async (isOpen) => {
+  if (!isOpen) return
+  await nextTick()
+  const element = customPanel.value
+  if (element && 'showPopover' in element && !element.matches(':popover-open')) element.showPopover()
+})
 </script>
 
 <template>
@@ -63,6 +75,7 @@ function applyCustom() {
         @click="model = option.value"
       >{{ option.label }}</button>
       <button
+        ref="customTrigger"
         type="button"
         :disabled="disabled"
         class="rounded px-2.5 py-1 text-sm font-medium transition-colors disabled:opacity-50"
@@ -72,9 +85,16 @@ function applyCustom() {
       >Custom</button>
     </div>
 
-    <Teleport to="body">
-      <div v-if="customOpen" class="fixed inset-0 z-[100] grid place-items-center bg-black/45 p-3 backdrop-blur-[2px]" @mousedown.self="customOpen = false">
-        <section role="dialog" aria-modal="true" aria-labelledby="custom-range-title" class="w-full max-w-lg rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-4 text-(--color-content) shadow-2xl">
+    <Transition name="menu-down">
+        <section
+          v-if="customOpen"
+          ref="customPanel"
+          popover="manual"
+          :style="floatingStyle"
+          role="dialog"
+          aria-labelledby="custom-range-title"
+          class="m-0 w-[min(30rem,calc(100vw-1.5rem))] rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-4 text-(--color-content) shadow-2xl"
+        >
           <h2 id="custom-range-title" class="font-semibold">Custom date range</h2>
           <p class="mt-1 text-sm text-(--color-content-muted)">Choose any period up to 366 days. Times use your local timezone.</p>
           <div class="mt-4 grid gap-4 sm:grid-cols-2">
@@ -87,7 +107,6 @@ function applyCustom() {
             <UiButton @click="applyCustom">Apply range</UiButton>
           </div>
         </section>
-      </div>
-    </Teleport>
+    </Transition>
   </div>
 </template>

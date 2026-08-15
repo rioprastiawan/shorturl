@@ -95,7 +95,16 @@ async function submit() {
         <Icon v-if="props.compact" name="lucide:briefcase-business" size="15" class="shrink-0 text-(--color-content-subtle)" />
         <span class="min-w-0 truncate font-medium">{{ active?.name ?? 'No workspace' }}</span>
       </span>
-      <span class="shrink-0 text-xs" :class="props.compact ? 'text-(--color-content-subtle)' : 'text-white/50'" aria-hidden="true">▾</span>
+      <Icon
+        name="lucide:chevron-down"
+        size="16"
+        class="shrink-0 transition-transform duration-200"
+        :class="[
+          props.compact ? 'text-(--color-content-subtle)' : 'text-white/55',
+          open ? 'rotate-180' : '',
+        ]"
+        aria-hidden="true"
+      />
     </button>
 
     <Teleport to="body">

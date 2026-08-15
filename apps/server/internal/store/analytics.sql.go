@@ -246,6 +246,260 @@ func (q *Queries) DeleteVisitorDimensionsBefore(ctx context.Context, day time.Ti
 	return result.RowsAffected(), nil
 }
 
+const filteredClicksByHourOfDay = `-- name: FilteredClicksByHourOfDay :many
+SELECT extract(hour FROM click_hourly.bucket)::integer AS hour, sum(click_hourly.clicks)::bigint AS clicks
+FROM click_hourly
+JOIN links ON links.id = click_hourly.link_id
+WHERE click_hourly.workspace_id = $1
+  AND click_hourly.bucket >= $2 AND click_hourly.bucket < $3
+  AND ($4::uuid IS NULL OR links.domain_id = $4)
+  AND ($5::uuid IS NULL OR links.id = $5)
+GROUP BY hour ORDER BY hour
+`
+
+type FilteredClicksByHourOfDayParams struct {
+	WorkspaceID uuid.UUID
+	FromTime    time.Time
+	ToTime      time.Time
+	DomainID    *uuid.UUID
+	LinkID      *uuid.UUID
+}
+
+type FilteredClicksByHourOfDayRow struct {
+	Hour   int32
+	Clicks int64
+}
+
+func (q *Queries) FilteredClicksByHourOfDay(ctx context.Context, arg FilteredClicksByHourOfDayParams) ([]FilteredClicksByHourOfDayRow, error) {
+	rows, err := q.db.Query(ctx, filteredClicksByHourOfDay,
+		arg.WorkspaceID,
+		arg.FromTime,
+		arg.ToTime,
+		arg.DomainID,
+		arg.LinkID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FilteredClicksByHourOfDayRow{}
+	for rows.Next() {
+		var i FilteredClicksByHourOfDayRow
+		if err := rows.Scan(&i.Hour, &i.Clicks); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const filteredClicksByWeekday = `-- name: FilteredClicksByWeekday :many
+SELECT extract(isodow FROM click_hourly.bucket)::integer AS weekday, sum(click_hourly.clicks)::bigint AS clicks
+FROM click_hourly
+JOIN links ON links.id = click_hourly.link_id
+WHERE click_hourly.workspace_id = $1
+  AND click_hourly.bucket >= $2 AND click_hourly.bucket < $3
+  AND ($4::uuid IS NULL OR links.domain_id = $4)
+  AND ($5::uuid IS NULL OR links.id = $5)
+GROUP BY weekday ORDER BY weekday
+`
+
+type FilteredClicksByWeekdayParams struct {
+	WorkspaceID uuid.UUID
+	FromTime    time.Time
+	ToTime      time.Time
+	DomainID    *uuid.UUID
+	LinkID      *uuid.UUID
+}
+
+type FilteredClicksByWeekdayRow struct {
+	Weekday int32
+	Clicks  int64
+}
+
+func (q *Queries) FilteredClicksByWeekday(ctx context.Context, arg FilteredClicksByWeekdayParams) ([]FilteredClicksByWeekdayRow, error) {
+	rows, err := q.db.Query(ctx, filteredClicksByWeekday,
+		arg.WorkspaceID,
+		arg.FromTime,
+		arg.ToTime,
+		arg.DomainID,
+		arg.LinkID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FilteredClicksByWeekdayRow{}
+	for rows.Next() {
+		var i FilteredClicksByWeekdayRow
+		if err := rows.Scan(&i.Weekday, &i.Clicks); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const filteredClicksInRange = `-- name: FilteredClicksInRange :one
+SELECT coalesce(sum(click_hourly.clicks), 0)::bigint
+FROM click_hourly
+JOIN links ON links.id = click_hourly.link_id
+WHERE click_hourly.workspace_id = $1
+  AND click_hourly.bucket >= $2
+  AND click_hourly.bucket < $3
+  AND ($4::uuid IS NULL OR links.domain_id = $4)
+  AND ($5::uuid IS NULL OR links.id = $5)
+`
+
+type FilteredClicksInRangeParams struct {
+	WorkspaceID uuid.UUID
+	FromTime    time.Time
+	ToTime      time.Time
+	DomainID    *uuid.UUID
+	LinkID      *uuid.UUID
+}
+
+func (q *Queries) FilteredClicksInRange(ctx context.Context, arg FilteredClicksInRangeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, filteredClicksInRange,
+		arg.WorkspaceID,
+		arg.FromTime,
+		arg.ToTime,
+		arg.DomainID,
+		arg.LinkID,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const filteredClicksOverTime = `-- name: FilteredClicksOverTime :many
+SELECT
+    date_trunc($1::text, click_hourly.bucket)::timestamptz AS period,
+    sum(click_hourly.clicks)::bigint AS clicks
+FROM click_hourly
+JOIN links ON links.id = click_hourly.link_id
+WHERE click_hourly.workspace_id = $2
+  AND click_hourly.bucket >= $3
+  AND click_hourly.bucket < $4
+  AND ($5::uuid IS NULL OR links.domain_id = $5)
+  AND ($6::uuid IS NULL OR links.id = $6)
+GROUP BY period
+ORDER BY period ASC
+`
+
+type FilteredClicksOverTimeParams struct {
+	Granularity string
+	WorkspaceID uuid.UUID
+	FromTime    time.Time
+	ToTime      time.Time
+	DomainID    *uuid.UUID
+	LinkID      *uuid.UUID
+}
+
+type FilteredClicksOverTimeRow struct {
+	Period time.Time
+	Clicks int64
+}
+
+func (q *Queries) FilteredClicksOverTime(ctx context.Context, arg FilteredClicksOverTimeParams) ([]FilteredClicksOverTimeRow, error) {
+	rows, err := q.db.Query(ctx, filteredClicksOverTime,
+		arg.Granularity,
+		arg.WorkspaceID,
+		arg.FromTime,
+		arg.ToTime,
+		arg.DomainID,
+		arg.LinkID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FilteredClicksOverTimeRow{}
+	for rows.Next() {
+		var i FilteredClicksOverTimeRow
+		if err := rows.Scan(&i.Period, &i.Clicks); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const filteredTopLinks = `-- name: FilteredTopLinks :many
+SELECT links.id, links.slug, links.title, links.destination_url, domains.hostname,
+       sum(click_hourly.clicks)::bigint AS clicks
+FROM click_hourly
+JOIN links ON links.id = click_hourly.link_id
+JOIN domains ON domains.id = links.domain_id
+WHERE click_hourly.workspace_id = $1
+  AND click_hourly.bucket >= $2 AND click_hourly.bucket < $3
+  AND ($4::uuid IS NULL OR links.domain_id = $4)
+  AND ($5::uuid IS NULL OR links.id = $5)
+GROUP BY links.id, links.slug, links.title, links.destination_url, domains.hostname
+ORDER BY clicks DESC LIMIT $6
+`
+
+type FilteredTopLinksParams struct {
+	WorkspaceID uuid.UUID
+	FromTime    time.Time
+	ToTime      time.Time
+	DomainID    *uuid.UUID
+	LinkID      *uuid.UUID
+	RowLimit    int32
+}
+
+type FilteredTopLinksRow struct {
+	ID             uuid.UUID
+	Slug           string
+	Title          *string
+	DestinationUrl string
+	Hostname       string
+	Clicks         int64
+}
+
+func (q *Queries) FilteredTopLinks(ctx context.Context, arg FilteredTopLinksParams) ([]FilteredTopLinksRow, error) {
+	rows, err := q.db.Query(ctx, filteredTopLinks,
+		arg.WorkspaceID,
+		arg.FromTime,
+		arg.ToTime,
+		arg.DomainID,
+		arg.LinkID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FilteredTopLinksRow{}
+	for rows.Next() {
+		var i FilteredTopLinksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.DestinationUrl,
+			&i.Hostname,
+			&i.Clicks,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const linkClickTotals = `-- name: LinkClickTotals :one
 SELECT
     coalesce(sum(clicks), 0)::bigint AS total_clicks,
