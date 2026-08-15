@@ -27,6 +27,12 @@ import (
 
 // SettingKey is the app_settings row that records a finished wizard.
 const SettingKey = "setup_completed"
+const DeploymentModeKey = "deployment_mode"
+
+const (
+	ModeInternal = "internal"
+	ModePublic   = "public"
+)
 
 // settingTrue is the JSONB payload written to that row.
 var settingTrue = []byte("true")
@@ -75,7 +81,7 @@ func (s *Service) Status(ctx context.Context) (bool, error) {
 //
 // The caller is responsible for having validated the inputs; name and email
 // must already be normalised.
-func (s *Service) Complete(ctx context.Context, name, email, password, workspaceName string) (*store.User, *store.Workspace, string, time.Time, error) {
+func (s *Service) Complete(ctx context.Context, name, email, password, workspaceName, deploymentMode string) (*store.User, *store.Workspace, string, time.Time, error) {
 	var noTime time.Time
 
 	completed, err := s.Status(ctx)
@@ -158,6 +164,11 @@ func (s *Service) Complete(ctx context.Context, name, email, password, workspace
 		return nil, nil, "", noTime, httpx.Internal(err)
 	}
 
+	modeJSON, _ := json.Marshal(deploymentMode)
+	if _, err := qtx.SetSetting(ctx, store.SetSettingParams{Key: DeploymentModeKey, Value: modeJSON}); err != nil {
+		return nil, nil, "", noTime, httpx.Internal(err)
+	}
+
 	if _, err := qtx.CreateSession(ctx, store.CreateSessionParams{
 		UserID:    user.ID,
 		TokenHash: security.HashToken(token),
@@ -171,4 +182,21 @@ func (s *Service) Complete(ctx context.Context, name, email, password, workspace
 	}
 
 	return &user, &ws, token, expiresAt, nil
+}
+
+// DeploymentMode returns the selected setup mode. Existing installations
+// default to public so an upgrade does not unexpectedly disable registration.
+func (s *Service) DeploymentMode(ctx context.Context) (string, error) {
+	setting, err := s.q.GetSetting(ctx, DeploymentModeKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ModePublic, nil
+	}
+	if err != nil {
+		return "", httpx.Internal(err)
+	}
+	var mode string
+	if json.Unmarshal(setting.Value, &mode) != nil || (mode != ModeInternal && mode != ModePublic) {
+		return ModePublic, nil
+	}
+	return mode, nil
 }

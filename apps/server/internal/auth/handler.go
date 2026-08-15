@@ -58,7 +58,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	user, err := h.svc.Register(ctx, name, email, req.Password)
+	user, err := h.svc.Register(ctx, name, email, req.Password, req.InvitationToken)
 	if err != nil {
 		httpx.Error(w, r, err)
 		return

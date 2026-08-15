@@ -14,6 +14,9 @@ import (
 type Querier interface {
 	AddWorkspaceMember(ctx context.Context, arg AddWorkspaceMemberParams) (WorkspaceMember, error)
 	ClearDefaultDomain(ctx context.Context, workspaceID uuid.UUID) error
+	ClicksByHourOfDay(ctx context.Context, arg ClicksByHourOfDayParams) ([]ClicksByHourOfDayRow, error)
+	ClicksByWeekday(ctx context.Context, arg ClicksByWeekdayParams) ([]ClicksByWeekdayRow, error)
+	ClicksInRange(ctx context.Context, arg ClicksInRangeParams) (int64, error)
 	ClicksOverTime(ctx context.Context, arg ClicksOverTimeParams) ([]ClicksOverTimeRow, error)
 	ClicksOverTimeForLink(ctx context.Context, arg ClicksOverTimeForLinkParams) ([]ClicksOverTimeForLinkRow, error)
 	CountActiveDomains(ctx context.Context, workspaceID uuid.UUID) (int64, error)
@@ -36,6 +39,9 @@ type Querier interface {
 	DeleteLink(ctx context.Context, arg DeleteLinkParams) (int64, error)
 	DeleteSession(ctx context.Context, tokenHash string) error
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
+	// Visitor hashes have the same retention window as raw click events. Other
+	// aggregate dimensions remain tiny and are retained indefinitely.
+	DeleteVisitorDimensionsBefore(ctx context.Context, day time.Time) (int64, error)
 	DeleteWorkspace(ctx context.Context, id uuid.UUID) error
 	GetAPIKeyByPrefix(ctx context.Context, keyPrefix string) (ApiKey, error)
 	GetDefaultDomain(ctx context.Context, workspaceID uuid.UUID) (Domain, error)
@@ -77,6 +83,7 @@ type Querier interface {
 	TopLinks(ctx context.Context, arg TopLinksParams) ([]TopLinksRow, error)
 	TouchAPIKey(ctx context.Context, id uuid.UUID) error
 	TouchSession(ctx context.Context, id uuid.UUID) error
+	UniqueVisitorsInRange(ctx context.Context, arg UniqueVisitorsInRangeParams) (int64, error)
 	UpdateDomainSSLStatus(ctx context.Context, arg UpdateDomainSSLStatusParams) error
 	UpdateDomainVerification(ctx context.Context, arg UpdateDomainVerificationParams) (Domain, error)
 	UpdateLink(ctx context.Context, arg UpdateLinkParams) (Link, error)

@@ -114,6 +114,26 @@ func TestAggregateSkipsEmptyDimensionValues(t *testing.T) {
 	}
 }
 
+func TestAggregateRollsUpAnonymousVisitors(t *testing.T) {
+	workspace := uuid.New()
+	day := time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC)
+	events := []enriched{
+		enrich(ClickEvent{LinkID: uuid.New(), WorkspaceID: workspace, ClickedAt: day, IPHash: "visitor-a"}),
+		enrich(ClickEvent{LinkID: uuid.New(), WorkspaceID: workspace, ClickedAt: day.Add(time.Hour), IPHash: "visitor-a"}),
+		enrich(ClickEvent{LinkID: uuid.New(), WorkspaceID: workspace, ClickedAt: day, IPHash: "visitor-b"}),
+	}
+
+	visitors := map[string]int64{}
+	for _, row := range aggregate(events).Dimensions {
+		if row.Dimension == DimensionVisitor {
+			visitors[row.Value] = row.Clicks
+		}
+	}
+	if visitors["visitor-a"] != 2 || visitors["visitor-b"] != 1 || len(visitors) != 2 {
+		t.Fatalf("unexpected visitor rollup: %#v", visitors)
+	}
+}
+
 func TestAggregateIsDeterministicallyOrdered(t *testing.T) {
 	// Two transactions upserting the same keys in different orders deadlock,
 	// so the order the aggregate produces must not depend on map iteration.

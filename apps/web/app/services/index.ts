@@ -6,12 +6,14 @@ import type {
   Domain,
   Link,
   LinkAnalytics,
+  PagePreview,
   Member,
   Overview,
   Role,
   SetupStatus,
   User,
   Workspace,
+  WorkspaceInvitation,
 } from '~/types/api'
 
 /**
@@ -24,7 +26,7 @@ export function useServices() {
   const api = useApi()
 
   const auth = {
-    register: (body: { name: string, email: string, password: string }) =>
+    register: (body: { name: string, email: string, password: string, invitation_token?: string }) =>
       api.post<User>('/auth/register', body),
     login: (body: { email: string, password: string }) =>
       api.post<User>('/auth/login', body),
@@ -39,6 +41,7 @@ export function useServices() {
       email: string
       password: string
       workspace_name: string
+      deployment_mode: 'internal' | 'public'
     }) => api.post<{ user: User, workspace: Workspace }>('/setup', body),
   }
 
@@ -53,6 +56,13 @@ export function useServices() {
     members: (id: string) => api.list<Member>(`/workspaces/${id}/members`),
     addMember: (id: string, body: { email: string, role: Role }) =>
       api.post<Member>(`/workspaces/${id}/members`, body),
+    createInvitation: (id: string, body: { role: Exclude<Role, 'owner'> }) =>
+      api.post<WorkspaceInvitation>(`/workspaces/${id}/invitations`, body),
+    invitations: (id: string) => api.list<WorkspaceInvitation>(`/workspaces/${id}/invitations`),
+    renewInvitation: (id: string, invitationId: string) =>
+      api.post<WorkspaceInvitation>(`/workspaces/${id}/invitations/${invitationId}/renew`),
+    revokeInvitation: (id: string, invitationId: string) =>
+      api.del(`/workspaces/${id}/invitations/${invitationId}`),
     updateMemberRole: (id: string, userId: string, body: { role: Role }) =>
       api.patch<Member>(`/workspaces/${id}/members/${userId}`, body),
     removeMember: (id: string, userId: string) =>
@@ -94,7 +104,13 @@ export function useServices() {
       password?: string
       expires_at?: string
       max_clicks?: number
+      metadata?: Record<string, unknown>
     }) => api.post<Link>(`/workspaces/${workspaceId}/links`, body),
+
+    preview: (workspaceId: string, destinationUrl: string) =>
+      api.post<PagePreview>(`/workspaces/${workspaceId}/links/preview`, {
+        destination_url: destinationUrl,
+      }),
 
     update: (workspaceId: string, id: string, body: Record<string, unknown>) =>
       api.patch<Link>(`/workspaces/${workspaceId}/links/${id}`, body),
@@ -116,7 +132,7 @@ export function useServices() {
 
   const apiKeys = {
     list: (workspaceId: string) => api.list<ApiKey>(`/workspaces/${workspaceId}/api-keys`),
-    create: (workspaceId: string, body: { name: string, scopes?: string[], test?: boolean }) =>
+    create: (workspaceId: string, body: { name: string, scopes?: string[], expires_at?: string, test?: boolean }) =>
       api.post<CreatedApiKey>(`/workspaces/${workspaceId}/api-keys`, body),
     revoke: (workspaceId: string, id: string) =>
       api.del(`/workspaces/${workspaceId}/api-keys/${id}`),

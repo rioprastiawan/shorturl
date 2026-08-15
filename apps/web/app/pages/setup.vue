@@ -18,7 +18,7 @@ const { setup } = useServices()
 const session = useSession()
 const setupComplete = useState<boolean | null>('setup.completed', () => null)
 
-const TOTAL_STEPS = 3
+const TOTAL_STEPS = 4
 
 const checking = ref(true)
 const step = ref(1)
@@ -27,6 +27,7 @@ const done = ref(false)
 const formError = ref<string | null>(null)
 
 const form = reactive({
+  deployment_mode: 'internal' as 'internal' | 'public',
   name: '',
   email: '',
   password: '',
@@ -68,7 +69,7 @@ function clearErrors() {
 function validateStep(target: number): boolean {
   clearErrors()
 
-  if (target === 2) {
+  if (target === 3) {
     const name = form.name.trim()
     if (!name) errors.name = 'Enter your name'
     else if (name.length < 2) errors.name = 'Must be at least 2 characters'
@@ -81,7 +82,7 @@ function validateStep(target: number): boolean {
     if (form.password.length < 10) errors.password = 'Must be at least 10 characters'
   }
 
-  if (target === 3) {
+  if (target === 4) {
     const workspace = form.workspace_name.trim()
     if (!workspace) errors.workspace_name = 'Enter a workspace name'
     else if (workspace.length < 2) errors.workspace_name = 'Must be at least 2 characters'
@@ -109,11 +110,11 @@ async function submit() {
   // Re-check both input steps: the user may have gone back and broken step 2
   // after it was already accepted. Step 2 first, so that if both are wrong the
   // errors left on screen are the ones on the step we send them back to.
-  if (!validateStep(2)) {
-    step.value = 2
+  if (!validateStep(3)) {
+    step.value = 3
     return
   }
-  if (!validateStep(3)) return
+  if (!validateStep(4)) return
 
   pending.value = true
   formError.value = null
@@ -123,6 +124,7 @@ async function submit() {
       email: form.email.trim(),
       password: form.password,
       workspace_name: form.workspace_name.trim(),
+      deployment_mode: form.deployment_mode,
     })
 
     // The server issues the session cookie as part of setup, so the new admin
@@ -138,7 +140,7 @@ async function submit() {
       errors.workspace_name = error.field('workspace_name')
 
       if (errors.name || errors.email || errors.password) {
-        step.value = 2
+        step.value = 3
         formError.value = 'Check the administrator details.'
       } else if (errors.workspace_name) {
         formError.value = null
@@ -195,7 +197,7 @@ async function submit() {
         Step {{ step }} of {{ TOTAL_STEPS }}
       </p>
       <h1 class="text-xl font-semibold tracking-tight">
-        {{ step === 1 ? 'Welcome to ShortURL' : step === 2 ? 'Administrator account' : 'First workspace' }}
+        {{ step === 1 ? 'Welcome to ShortURL' : step === 2 ? 'Installation mode' : step === 3 ? 'Administrator account' : 'First workspace' }}
       </h1>
     </header>
 
@@ -224,6 +226,23 @@ async function submit() {
       </p>
 
       <template v-if="step === 2">
+        <label class="flex cursor-pointer gap-3 rounded-lg border border-(--color-border) p-4">
+          <input v-model="form.deployment_mode" type="radio" value="internal" class="mt-1">
+          <span>
+            <strong class="block text-sm">Internal / private</strong>
+            <span class="block text-xs text-(--color-content-muted)">Public registration is disabled. People join a workspace through invitation links.</span>
+          </span>
+        </label>
+        <label class="flex cursor-pointer gap-3 rounded-lg border border-(--color-border) p-4">
+          <input v-model="form.deployment_mode" type="radio" value="public" class="mt-1">
+          <span>
+            <strong class="block text-sm">Public / SaaS</strong>
+            <span class="block text-xs text-(--color-content-muted)">Anyone may register and create their own workspace.</span>
+          </span>
+        </label>
+      </template>
+
+      <template v-if="step === 3">
         <UiInput
           v-model="form.name"
           label="Name"
@@ -252,7 +271,7 @@ async function submit() {
         />
       </template>
 
-      <template v-if="step === 3">
+      <template v-if="step === 4">
         <UiInput
           v-model="form.workspace_name"
           label="Workspace name"

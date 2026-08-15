@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Domain } from '~/types/api'
+import type { Domain, PagePreview } from '~/types/api'
 import type { LinkFormErrors } from '~/components/links/form'
 import LinkFormFields from '~/components/links/FormFields.vue'
 import { emptyLinkForm, optional, toRfc3339 } from '~/components/links/form'
@@ -21,6 +21,43 @@ const domainsError = ref<string | null>(null)
 const form = ref(emptyLinkForm())
 const errors = ref<LinkFormErrors>({})
 const submitting = ref(false)
+const preview = ref<PagePreview | null>(null)
+const previewing = ref(false)
+const previewError = ref<string | null>(null)
+let previewTimer: ReturnType<typeof setTimeout> | undefined
+let previewToken = 0
+let autofilledTitle = ''
+
+watch(() => form.value.destination_url, (raw) => {
+  clearTimeout(previewTimer)
+  const token = ++previewToken
+  preview.value = null
+  previewError.value = null
+  previewing.value = false
+  const destination = raw.trim()
+  if (!/^https?:\/\//i.test(destination)) return
+
+  previewTimer = setTimeout(async () => {
+    const workspaceId = ws.activeId.value
+    if (!workspaceId) return
+    previewing.value = true
+    try {
+      const result = await links.preview(workspaceId, destination)
+      if (token !== previewToken) return
+      preview.value = result
+      if (result.title && (!form.value.title.trim() || form.value.title === autofilledTitle)) {
+        form.value.title = result.title
+        autofilledTitle = result.title
+      }
+    } catch {
+      if (token === previewToken) previewError.value = 'Preview unavailable; the link can still be created.'
+    } finally {
+      if (token === previewToken) previewing.value = false
+    }
+  }, 650)
+})
+
+onBeforeUnmount(() => clearTimeout(previewTimer))
 
 async function loadDomains() {
   const workspaceId = ws.activeId.value
@@ -126,6 +163,7 @@ async function submit() {
 
   const title = optional(model.title)
   if (title) body.title = title
+  if (preview.value) body.metadata = { preview: preview.value }
 
   const redirectType = Number(model.redirect_type)
   if (Number.isFinite(redirectType) && redirectType > 0) body.redirect_type = redirectType
@@ -208,6 +246,18 @@ async function submit() {
           :errors="errors"
           :disabled="submitting"
         />
+
+        <p v-if="previewing" class="text-sm text-(--color-content-muted)" role="status">
+          Reading page metadata…
+        </p>
+        <LinkPreviewCard
+          v-else-if="preview"
+          :preview="preview"
+          :destination-url="form.destination_url.trim()"
+        />
+        <p v-else-if="previewError" class="text-xs text-(--color-content-muted)">
+          {{ previewError }}
+        </p>
 
         <div class="flex items-center gap-2">
           <UiButton type="submit" :loading="submitting">

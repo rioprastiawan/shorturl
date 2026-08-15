@@ -9,6 +9,17 @@ import (
 	"github.com/rioprastiawan/shorturl/apps/server/internal/store"
 )
 
+// InvitationDTO contains the one-time plaintext token. Only its hash is kept.
+type InvitationDTO struct {
+	ID         uuid.UUID  `json:"id"`
+	Token      string     `json:"token,omitempty"`
+	Role       string     `json:"role"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+	AcceptedAt *time.Time `json:"accepted_at"`
+	RevokedAt  *time.Time `json:"revoked_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
 // Name length bounds, matching workspaces.name VARCHAR(120).
 const (
 	NameMinLength = 2

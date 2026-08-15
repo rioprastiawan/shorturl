@@ -8,6 +8,8 @@ useHead({ title: 'Create account · ShortURL' })
 
 const { auth } = useServices()
 const session = useSession()
+const route = useRoute()
+const setupStatus = useState<import('~/types/api').SetupStatus | null>('setup.status', () => null)
 
 const name = ref('')
 const email = ref('')
@@ -16,6 +18,12 @@ const pending = ref(false)
 
 const formError = ref<string | null>(null)
 const errors = reactive<{ name?: string, email?: string, password?: string }>({})
+const invitationToken = computed(() => typeof route.query.invite === 'string' ? route.query.invite : '')
+
+onMounted(async () => {
+  setupStatus.value = await useServices().setup.status()
+  if (!setupStatus.value.registration_enabled && !invitationToken.value) await navigateTo('/login')
+})
 
 async function submit() {
   pending.value = true
@@ -29,17 +37,19 @@ async function submit() {
       name: name.value,
       email: email.value,
       password: password.value,
+      ...(invitationToken.value ? { invitation_token: invitationToken.value } : {}),
     })
     // Registration signs you in server-side, so going to /login would be a
     // pointless second form.
     session.set(user)
-    await navigateTo('/dashboard')
+    await navigateTo(invitationToken.value ? '/dashboard' : '/create-workspace')
   } catch (error) {
     if (error instanceof ApiError) {
       errors.name = error.field('name')
       errors.email = error.field('email')
       errors.password = error.field('password')
-      if (!errors.name && !errors.email && !errors.password) formError.value = error.message
+      const invitationError = error.field('invitation_token')
+      if (!errors.name && !errors.email && !errors.password) formError.value = invitationError ?? error.message
     } else {
       formError.value = 'Could not reach the server. Check your connection and try again.'
     }
@@ -53,10 +63,10 @@ async function submit() {
   <div class="flex flex-col gap-6">
     <header class="flex flex-col gap-1">
       <h1 class="text-xl font-semibold tracking-tight">
-        Create your account
+        {{ invitationToken ? 'Accept invitation' : 'Create your account' }}
       </h1>
       <p class="text-sm text-(--color-content-muted)">
-        You will be signed in straight away.
+        {{ invitationToken ? 'Create your account to join the workspace.' : 'You will be signed in straight away.' }}
       </p>
     </header>
 

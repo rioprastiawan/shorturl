@@ -46,6 +46,16 @@ export interface Member {
   created_at: string
 }
 
+export interface WorkspaceInvitation {
+  id: string
+  token: string
+  role: Exclude<Role, 'owner'>
+  expires_at: string
+  accepted_at: string | null
+  revoked_at: string | null
+  created_at: string
+}
+
 export type DomainStatus = 'pending' | 'verifying' | 'active' | 'failed' | 'disabled'
 export type SslStatus = 'pending' | 'active' | 'failed'
 
@@ -90,10 +100,24 @@ export interface Link {
   max_clicks: number | null
   click_count: number
   external_reference: string | null
-  metadata?: Record<string, unknown>
+  metadata?: LinkMetadata
   created_via: 'dashboard' | 'api'
   created_at: string
   updated_at: string
+}
+
+export interface PagePreview {
+  title?: string
+  description?: string
+  image_url?: string
+  favicon_url?: string
+  site_name?: string
+  canonical_url?: string
+  fetched_at: string
+}
+
+export interface LinkMetadata extends Record<string, unknown> {
+  preview?: PagePreview
 }
 
 export interface ApiKey {
@@ -139,18 +163,32 @@ export interface ValueStat {
   clicks: number
 }
 
+export interface ClickSummary {
+  total_clicks: number
+  unique_visitors: number
+  previous_clicks: number
+  growth_percent: number | null
+  average_clicks_per_day: number
+}
+
 export type AnalyticsRange = '24h' | '7d' | '30d' | '90d' | 'custom'
 
 export interface ClicksReport {
   range: AnalyticsRange
   granularity: 'hour' | 'day' | 'week'
   series: SeriesPoint[]
+  summary: ClickSummary
   top_links: TopLink[]
   referrers: ValueStat[]
   utm_sources: ValueStat[]
+  utm_mediums: ValueStat[]
+  utm_campaigns: ValueStat[]
   devices: ValueStat[]
   browsers: ValueStat[]
   os: ValueStat[]
+  countries: ValueStat[]
+  hours: ValueStat[]
+  weekdays: ValueStat[]
 }
 
 /**
@@ -180,4 +218,6 @@ export interface LinkAnalytics {
 
 export interface SetupStatus {
   completed: boolean
+  deployment_mode: 'internal' | 'public'
+  registration_enabled: boolean
 }

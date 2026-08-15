@@ -27,4 +27,10 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!session.isAuthenticated.value) {
     return navigateTo({ path: '/login', query: { redirect: to.fullPath } })
   }
+
+  const workspaces = useWorkspaces()
+  const items = await workspaces.load()
+  if (!items.length && to.path !== '/create-workspace') {
+    return navigateTo('/create-workspace')
+  }
 })

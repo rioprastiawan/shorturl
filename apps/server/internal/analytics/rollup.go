@@ -23,6 +23,9 @@ const (
 	DimensionOS          = "os"
 	DimensionBrowser     = "browser"
 	DimensionCountry     = "country"
+	// Visitor stores only the keyed, irreversible IP hash. Keeping it in the
+	// generic rollup makes distinct visitors queryable without retaining an IP.
+	DimensionVisitor = "visitor"
 )
 
 // enriched is a stream event plus everything the worker derives from it. The
@@ -126,6 +129,7 @@ func aggregate(events []enriched) Rollup {
 			DimensionOS:          ev.OS,
 			DimensionBrowser:     ev.Browser,
 			DimensionCountry:     ev.Country,
+			DimensionVisitor:     ev.IPHash,
 		} {
 			// An empty value carries no information and would still cost a row
 			// in every breakdown query, so it is never stored.

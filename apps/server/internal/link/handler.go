@@ -28,9 +28,33 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/", h.list)
 	r.Post("/", h.create)
+	r.Post("/preview", h.preview)
 	r.Get("/{linkId}", h.get)
 	r.Patch("/{linkId}", h.update)
 	r.Delete("/{linkId}", h.delete)
+}
+
+type previewRequest struct {
+	DestinationURL string `json:"destination_url"`
+}
+
+func (h *Handler) preview(w http.ResponseWriter, r *http.Request) {
+	m := authctx.MustMembership(r.Context())
+	if !m.Role.CanManageLinks() {
+		httpx.Error(w, r, httpx.ErrForbidden)
+		return
+	}
+	var req previewRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	preview, err := h.svc.Preview(r.Context(), req.DestinationURL)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.Data(w, http.StatusOK, preview)
 }
 
 type createRequest struct {

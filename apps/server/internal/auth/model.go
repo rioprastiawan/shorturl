@@ -54,9 +54,10 @@ func ValidateAccount(v *validate.Errors, name, email, password string) (string, 
 }
 
 type registerRequest struct {
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Name            string `json:"name"`
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	InvitationToken string `json:"invitation_token"`
 }
 
 type loginRequest struct {

@@ -47,19 +47,36 @@ type DimensionCount struct {
 	Clicks int64  `json:"clicks"`
 }
 
+// ClickSummary is scoped to the selected reporting window. GrowthPercent is
+// null when the previous window had no clicks, since no finite percentage can
+// represent growth from zero.
+type ClickSummary struct {
+	TotalClicks         int64    `json:"total_clicks"`
+	UniqueVisitors      int64    `json:"unique_visitors"`
+	PreviousClicks      int64    `json:"previous_clicks"`
+	GrowthPercent       *float64 `json:"growth_percent"`
+	AverageClicksPerDay float64  `json:"average_clicks_per_day"`
+}
+
 // ClicksResponse is the full analytics page payload.
 type ClicksResponse struct {
-	Range       string           `json:"range"`
-	Granularity string           `json:"granularity"`
-	From        time.Time        `json:"from"`
-	To          time.Time        `json:"to"`
-	Series      []SeriesPoint    `json:"series"`
-	TopLinks    []TopLink        `json:"top_links"`
-	Referrers   []DimensionCount `json:"referrers"`
-	UTMSources  []DimensionCount `json:"utm_sources"`
-	Devices     []DimensionCount `json:"devices"`
-	Browsers    []DimensionCount `json:"browsers"`
-	OS          []DimensionCount `json:"os"`
+	Range        string           `json:"range"`
+	Granularity  string           `json:"granularity"`
+	From         time.Time        `json:"from"`
+	To           time.Time        `json:"to"`
+	Series       []SeriesPoint    `json:"series"`
+	Summary      ClickSummary     `json:"summary"`
+	TopLinks     []TopLink        `json:"top_links"`
+	Referrers    []DimensionCount `json:"referrers"`
+	UTMSources   []DimensionCount `json:"utm_sources"`
+	UTMMediums   []DimensionCount `json:"utm_mediums"`
+	UTMCampaigns []DimensionCount `json:"utm_campaigns"`
+	Devices      []DimensionCount `json:"devices"`
+	Browsers     []DimensionCount `json:"browsers"`
+	OS           []DimensionCount `json:"os"`
+	Countries    []DimensionCount `json:"countries"`
+	Hours        []DimensionCount `json:"hours"`
+	Weekdays     []DimensionCount `json:"weekdays"`
 }
 
 // LinkAnalyticsResponse is the per-link view.

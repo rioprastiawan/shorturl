@@ -86,7 +86,7 @@ const fieldClass = 'w-full rounded-md border border-(--color-border-strong) bg-t
       label="Title"
       :disabled="disabled"
       placeholder="Spring sale landing page"
-      hint="Only you see this — it makes the list searchable."
+      hint="Optional. Leave empty to use the destination page title automatically."
       :error="errors.title"
     />
 

@@ -33,6 +33,35 @@ WHERE workspace_id = sqlc.arg(workspace_id)
 GROUP BY period
 ORDER BY period ASC;
 
+-- name: ClicksInRange :one
+SELECT coalesce(sum(clicks), 0)::bigint
+FROM click_hourly
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND bucket >= sqlc.arg(from_time)
+  AND bucket < sqlc.arg(to_time);
+
+-- name: ClicksByHourOfDay :many
+SELECT
+    extract(hour FROM bucket)::integer AS hour,
+    sum(clicks)::bigint AS clicks
+FROM click_hourly
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND bucket >= sqlc.arg(from_time)
+  AND bucket < sqlc.arg(to_time)
+GROUP BY hour
+ORDER BY hour;
+
+-- name: ClicksByWeekday :many
+SELECT
+    extract(isodow FROM bucket)::integer AS weekday,
+    sum(clicks)::bigint AS clicks
+FROM click_hourly
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND bucket >= sqlc.arg(from_time)
+  AND bucket < sqlc.arg(to_time)
+GROUP BY weekday
+ORDER BY weekday;
+
 -- name: ClicksOverTimeForLink :many
 SELECT
     date_trunc(sqlc.arg(granularity)::text, bucket)::timestamptz AS period,
@@ -75,6 +104,14 @@ GROUP BY value
 ORDER BY clicks DESC
 LIMIT sqlc.arg(row_limit);
 
+-- name: UniqueVisitorsInRange :one
+SELECT count(DISTINCT value)::bigint
+FROM click_dimension_daily
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND dimension = 'visitor'
+  AND day >= sqlc.arg(from_day)
+  AND day <= sqlc.arg(to_day);
+
 -- name: LinkClickTotals :one
 SELECT
     coalesce(sum(clicks), 0)::bigint AS total_clicks,
@@ -92,3 +129,9 @@ LIMIT $2;
 -- are tiny. Called by the worker's periodic maintenance pass.
 -- name: DeleteClickEventsBefore :execrows
 DELETE FROM click_events WHERE clicked_at < $1;
+
+-- Visitor hashes have the same retention window as raw click events. Other
+-- aggregate dimensions remain tiny and are retained indefinitely.
+-- name: DeleteVisitorDimensionsBefore :execrows
+DELETE FROM click_dimension_daily
+WHERE dimension = 'visitor' AND day < $1;

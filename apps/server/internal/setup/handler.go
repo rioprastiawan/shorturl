@@ -13,14 +13,17 @@ import (
 )
 
 type completeRequest struct {
-	Name          string `json:"name"`
-	Email         string `json:"email"`
-	Password      string `json:"password"`
-	WorkspaceName string `json:"workspace_name"`
+	Name           string `json:"name"`
+	Email          string `json:"email"`
+	Password       string `json:"password"`
+	WorkspaceName  string `json:"workspace_name"`
+	DeploymentMode string `json:"deployment_mode"`
 }
 
 type statusDTO struct {
-	Completed bool `json:"completed"`
+	Completed           bool   `json:"completed"`
+	DeploymentMode      string `json:"deployment_mode"`
+	RegistrationEnabled bool   `json:"registration_enabled"`
 }
 
 type completeDTO struct {
@@ -50,7 +53,12 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
-	httpx.Data(w, http.StatusOK, statusDTO{Completed: completed})
+	mode, err := h.svc.DeploymentMode(r.Context())
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.Data(w, http.StatusOK, statusDTO{Completed: completed, DeploymentMode: mode, RegistrationEnabled: mode == ModePublic})
 }
 
 func (h *Handler) complete(w http.ResponseWriter, r *http.Request) {
@@ -66,12 +74,15 @@ func (h *Handler) complete(w http.ResponseWriter, r *http.Request) {
 	if workspaceName != "" {
 		v.Length("workspace_name", workspaceName, workspace.NameMinLength, workspace.NameMaxLength)
 	}
+	if req.DeploymentMode != ModeInternal && req.DeploymentMode != ModePublic {
+		v.Add("deployment_mode", "must be one of: internal, public")
+	}
 	if v.HasErrors() {
 		httpx.Error(w, r, httpx.Invalid(v.Fields()))
 		return
 	}
 
-	user, ws, token, expiresAt, err := h.svc.Complete(r.Context(), name, email, req.Password, workspaceName)
+	user, ws, token, expiresAt, err := h.svc.Complete(r.Context(), name, email, req.Password, workspaceName, req.DeploymentMode)
 	if err != nil {
 		httpx.Error(w, r, err)
 		return

@@ -75,7 +75,7 @@ func NewApp(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, 
 		Redis:   redis,
 		Queries: q,
 
-		Auth:      auth.NewService(q, cfg),
+		Auth:      auth.NewService(pool, q, cfg),
 		Setup:     setup.NewService(pool, q, cfg),
 		Workspace: workspace.NewService(pool, q),
 		Domain:    domain.NewService(q, pool, cfg),

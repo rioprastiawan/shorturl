@@ -8,6 +8,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/rioprastiawan/shorturl/apps/server/internal/config"
+	"github.com/rioprastiawan/shorturl/apps/server/internal/database"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/httpx"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/security"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/store"
@@ -48,24 +50,79 @@ const dummyPasswordHash = "$argon2id$v=19$m=65536,t=2,p=4$QocpZjr674eGqTwTa97TxQ
 
 // Service holds the authentication business rules.
 type Service struct {
-	q   *store.Queries
-	cfg config.Config
+	pool *database.Pool
+	q    *store.Queries
+	cfg  config.Config
 }
 
 // NewService builds the authentication service.
-func NewService(q *store.Queries, cfg config.Config) *Service {
-	return &Service{q: q, cfg: cfg}
+func NewService(pool *database.Pool, q *store.Queries, cfg config.Config) *Service {
+	return &Service{pool: pool, q: q, cfg: cfg}
 }
 
 // Register creates a user with a hashed password. The caller is responsible
 // for having validated the inputs.
-func (s *Service) Register(ctx context.Context, name, email, password string) (*store.User, error) {
+func (s *Service) Register(ctx context.Context, name, email, password, invitationToken string) (*store.User, error) {
 	hash, err := security.HashPassword(password)
 	if err != nil {
 		return nil, httpx.Internal(err)
 	}
 
-	user, err := s.q.CreateUser(ctx, store.CreateUserParams{
+	if invitationToken == "" {
+		enabled, err := s.publicRegistrationEnabled(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !enabled {
+			return nil, &httpx.APIError{Status: http.StatusForbidden, Code: "registration_disabled", Message: "Public registration is disabled on this installation"}
+		}
+		return s.createUser(ctx, s.q, name, email, hash)
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, httpx.Internal(err)
+	}
+	defer tx.Rollback(ctx)
+
+	var workspaceID uuid.UUID
+	var role string
+	err = tx.QueryRow(ctx, `SELECT workspace_id, role FROM workspace_invitations
+		WHERE token_hash = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+		FOR UPDATE`, security.HashToken(invitationToken)).Scan(&workspaceID, &role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, httpx.Invalid(map[string][]string{"invitation_token": {"is invalid or has expired"}})
+	}
+	if err != nil {
+		return nil, httpx.Internal(err)
+	}
+
+	qtx := store.New(tx)
+	user, err := s.createUser(ctx, qtx, name, email, hash)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := qtx.AddWorkspaceMember(ctx, store.AddWorkspaceMemberParams{
+		WorkspaceID: workspaceID, UserID: user.ID, Role: role,
+	}); err != nil {
+		return nil, httpx.Internal(err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE workspace_invitations SET accepted_at = now()
+		WHERE token_hash = $1`, security.HashToken(invitationToken)); err != nil {
+		return nil, httpx.Internal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, httpx.Internal(err)
+	}
+	return user, nil
+}
+
+type userCreator interface {
+	CreateUser(context.Context, store.CreateUserParams) (store.User, error)
+}
+
+func (s *Service) createUser(ctx context.Context, q userCreator, name, email, hash string) (*store.User, error) {
+	user, err := q.CreateUser(ctx, store.CreateUserParams{
 		Name:         name,
 		Email:        email,
 		PasswordHash: hash,
@@ -78,6 +135,21 @@ func (s *Service) Register(ctx context.Context, name, email, password string) (*
 		return nil, httpx.Internal(err)
 	}
 	return &user, nil
+}
+
+func (s *Service) publicRegistrationEnabled(ctx context.Context) (bool, error) {
+	setting, err := s.q.GetSetting(ctx, "deployment_mode")
+	if errors.Is(err, pgx.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, httpx.Internal(err)
+	}
+	var mode string
+	if json.Unmarshal(setting.Value, &mode) != nil {
+		return true, nil
+	}
+	return mode != "internal", nil
 }
 
 // Login verifies credentials and opens a session, returning the plaintext

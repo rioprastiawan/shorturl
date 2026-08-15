@@ -394,6 +394,11 @@ func (w *Worker) expireRows(ctx context.Context) {
 			slog.Time("before", cutoff),
 		)
 	}
+	if n, err := w.q.DeleteVisitorDimensionsBefore(ctx, truncateDay(cutoff)); err != nil {
+		w.logger.Error("deleting expired visitor rollups", slog.String("error", err.Error()))
+	} else if n > 0 {
+		w.logger.Info("deleted expired visitor rollups", slog.Int64("rows", n))
+	}
 }
 
 // pause sleeps unless the worker is shutting down.

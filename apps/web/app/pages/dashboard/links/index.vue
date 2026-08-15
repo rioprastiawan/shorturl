@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Domain, Link } from '~/types/api'
+import type { Domain, Link, PagePreview } from '~/types/api'
 import LinkRowActions from '~/components/links/RowActions.vue'
 import LinkStatusBadge from '~/components/links/StatusBadge.vue'
 import { copyText } from '~/components/links/clipboard'
@@ -45,6 +45,12 @@ function clearFilters() {
   debouncedSearch.value = ''
   status.value = ''
   domainId.value = ''
+}
+
+function previewOf(link: Link): PagePreview | null {
+  const value = link.metadata?.preview
+  if (!value || typeof value !== 'object' || !(value as PagePreview).fetched_at) return null
+  return value as PagePreview
 }
 
 // ------------------------------------------------------------------ data
@@ -291,17 +297,32 @@ async function confirmDelete() {
             >
               <td class="px-5 py-3">
                 <div class="flex items-center gap-1">
-                  <NuxtLink
-                    :to="`/dashboard/links/${link.id}`"
-                    class="font-medium hover:underline"
+                  <LinkPreviewCard
+                    v-if="previewOf(link)"
+                    :preview="previewOf(link)!"
+                    :destination-url="link.destination_url"
+                    hover
                   >
+                    <NuxtLink :to="`/dashboard/links/${link.id}`" class="font-medium hover:underline">
+                      {{ link.domain }}/{{ link.slug }}
+                    </NuxtLink>
+                  </LinkPreviewCard>
+                  <NuxtLink v-else :to="`/dashboard/links/${link.id}`" class="font-medium hover:underline">
                     {{ link.domain }}/{{ link.slug }}
                   </NuxtLink>
                   <UiCopyButton :value="link.short_url" label="Copy" />
                 </div>
               </td>
               <td class="px-5 py-3 text-(--color-content-muted)">
-                <span :title="link.destination_url">
+                <span class="flex items-center gap-2" :title="link.destination_url">
+                  <img
+                    v-if="previewOf(link)?.favicon_url"
+                    :src="previewOf(link)?.favicon_url"
+                    alt=""
+                    class="size-4 shrink-0 rounded-sm"
+                    loading="lazy"
+                    referrerpolicy="no-referrer"
+                  >
                   {{ truncateMiddle(link.destination_url, 48) }}
                 </span>
               </td>

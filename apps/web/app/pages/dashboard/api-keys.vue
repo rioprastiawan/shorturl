@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ApiKey, CreatedApiKey } from '~/types/api'
 import { formatDateTime } from '~/components/links/format'
+import { toRfc3339 } from '~/components/links/form'
 import { ApiError } from '~/composables/useApi'
 import { useServices } from '~/services'
 
@@ -61,12 +62,14 @@ const createOpen = ref(false)
 const creating = ref(false)
 const newName = ref('')
 const newScopes = ref<string[]>(['links:read', 'links:write'])
+const newExpiresAt = ref('')
 const newTest = ref(false)
 const createError = ref<string | null>(null)
 
 function openCreate() {
   newName.value = ''
   newScopes.value = ['links:read', 'links:write']
+  newExpiresAt.value = ''
   newTest.value = false
   createError.value = null
   createOpen.value = true
@@ -89,20 +92,29 @@ async function createKey() {
     return
   }
 
+  const expiresAt = toRfc3339(newExpiresAt.value)
+  if (newExpiresAt.value && (!expiresAt || new Date(expiresAt).getTime() <= Date.now())) {
+    createError.value = 'Expiration time must be in the future.'
+    return
+  }
+
   creating.value = true
   createError.value = null
   try {
-    const created = await apiKeys.create(workspaceId, {
+    const body: { name: string, scopes: string[], expires_at?: string, test: boolean } = {
       name,
       scopes: [...newScopes.value],
       test: newTest.value,
-    })
+    }
+    if (expiresAt) body.expires_at = expiresAt
+
+    const created = await apiKeys.create(workspaceId, body)
     keys.value = [created, ...keys.value]
     createOpen.value = false
     revealed.value = created
   } catch (error) {
     if (error instanceof ApiError) {
-      createError.value = error.field('name') ?? error.field('scopes') ?? error.message
+      createError.value = error.field('name') ?? error.field('scopes') ?? error.field('expires_at') ?? error.message
     } else {
       createError.value = 'Could not create the key.'
     }
@@ -261,6 +273,9 @@ const snippet = computed(() => `curl -X POST ${apiBase.value}/links \\
                   Created
                 </th>
                 <th scope="col" class="px-5 py-3 font-medium">
+                  Expires
+                </th>
+                <th scope="col" class="px-5 py-3 font-medium">
                   Status
                 </th>
                 <th scope="col" class="px-5 py-3 font-medium">
@@ -293,6 +308,9 @@ const snippet = computed(() => `curl -X POST ${apiBase.value}/links \\
                 </td>
                 <td class="whitespace-nowrap px-5 py-3 text-(--color-content-muted)">
                   {{ formatDateTime(key.created_at) }}
+                </td>
+                <td class="whitespace-nowrap px-5 py-3 text-(--color-content-muted)">
+                  {{ key.expires_at ? formatDateTime(key.expires_at) : 'Never' }}
                 </td>
                 <td class="px-5 py-3">
                   <UiBadge :tone="keyState(key).tone" dot>
@@ -357,6 +375,14 @@ const snippet = computed(() => `curl -X POST ${apiBase.value}/links \\
             </span>
           </label>
         </fieldset>
+
+        <UiInput
+          v-model="newExpiresAt"
+          label="Expiration time (optional)"
+          type="datetime-local"
+          :disabled="creating"
+          hint="Leave empty for a key that never expires. Time is interpreted in your local timezone."
+        />
 
         <label class="flex items-start gap-2 text-sm">
           <input

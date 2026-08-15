@@ -9,6 +9,15 @@ useHead({ title: 'Sign in · ShortURL' })
 const { auth } = useServices()
 const session = useSession()
 const route = useRoute()
+const setupStatus = useState<import('~/types/api').SetupStatus | null>('setup.status', () => null)
+
+onMounted(async () => {
+  try {
+    setupStatus.value = await useServices().setup.status()
+  } catch {
+    // Keep sign-in usable if the status request itself fails.
+  }
+})
 
 const email = ref('')
 const password = ref('')
@@ -88,7 +97,7 @@ async function submit() {
       </UiButton>
     </form>
 
-    <p class="text-sm text-(--color-content-muted)">
+    <p v-if="setupStatus?.registration_enabled" class="text-sm text-(--color-content-muted)">
       Don't have an account?
       <NuxtLink to="/register" class="font-medium text-(--color-accent) hover:underline">
         Create one

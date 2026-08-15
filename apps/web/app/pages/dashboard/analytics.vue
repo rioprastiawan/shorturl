@@ -42,7 +42,21 @@ watch([range, () => ws.activeId.value], () => load(), { immediate: true })
 
 const series = computed(() => report.value?.series ?? [])
 const topLinks = computed(() => report.value?.top_links ?? [])
-const totalClicks = computed(() => series.value.reduce((acc, point) => acc + point.clicks, 0))
+const totalClicks = computed(() => report.value?.summary?.total_clicks
+  ?? series.value.reduce((acc, point) => acc + point.clicks, 0))
+const peakHour = computed(() => {
+  const hours = report.value?.hours ?? []
+  return hours.reduce<(typeof hours)[number] | null>(
+    (peak, item) => !peak || item.clicks > peak.clicks ? item : peak,
+    null,
+  )
+})
+const growth = computed(() => report.value?.summary?.growth_percent ?? null)
+const growthLabel = computed(() => {
+  if (growth.value === null) return 'No previous-period baseline'
+  const prefix = growth.value > 0 ? '+' : ''
+  return `${prefix}${growth.value.toFixed(1)}% vs previous period`
+})
 
 /**
  * Every breakdown in one list so the template can skip empty ones without
@@ -52,9 +66,14 @@ const totalClicks = computed(() => series.value.reduce((acc, point) => acc + poi
 const breakdowns = computed(() => [
   { key: 'referrers', title: 'Referrers', items: report.value?.referrers ?? [], empty: 'Direct / none' },
   { key: 'utm_sources', title: 'UTM sources', items: report.value?.utm_sources ?? [], empty: 'No utm_source' },
+  { key: 'utm_mediums', title: 'UTM mediums', items: report.value?.utm_mediums ?? [], empty: 'No utm_medium' },
+  { key: 'utm_campaigns', title: 'UTM campaigns', items: report.value?.utm_campaigns ?? [], empty: 'No utm_campaign' },
   { key: 'devices', title: 'Devices', items: report.value?.devices ?? [], empty: 'Unknown' },
   { key: 'browsers', title: 'Browsers', items: report.value?.browsers ?? [], empty: 'Unknown' },
   { key: 'os', title: 'Operating systems', items: report.value?.os ?? [], empty: 'Unknown' },
+  { key: 'countries', title: 'Countries', items: report.value?.countries ?? [], empty: 'Unknown' },
+  { key: 'hours', title: 'Traffic by hour', items: report.value?.hours ?? [], empty: 'Unknown' },
+  { key: 'weekdays', title: 'Traffic by weekday', items: report.value?.weekdays ?? [], empty: 'Unknown' },
 ].filter(card => card.items.length > 0))
 
 const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 0)
@@ -99,6 +118,44 @@ const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 
     </UiCard>
 
     <template v-else>
+      <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Analytics summary">
+        <div class="rounded-lg border border-(--color-border) bg-(--color-surface-raised) px-4 py-3">
+          <p class="text-2xl font-semibold tabular-nums tracking-tight">
+            {{ formatNumber(report?.summary?.total_clicks ?? totalClicks) }}
+          </p>
+          <p class="mt-0.5 text-xs text-(--color-content-muted)">Clicks in period</p>
+        </div>
+        <div class="rounded-lg border border-(--color-border) bg-(--color-surface-raised) px-4 py-3">
+          <p class="text-2xl font-semibold tabular-nums tracking-tight">
+            {{ formatNumber(report?.summary?.unique_visitors ?? 0) }}
+          </p>
+          <p class="mt-0.5 text-xs text-(--color-content-muted)">Unique visitors</p>
+        </div>
+        <div class="rounded-lg border border-(--color-border) bg-(--color-surface-raised) px-4 py-3">
+          <p
+            class="text-2xl font-semibold tabular-nums tracking-tight"
+            :class="growth !== null && growth < 0 ? 'text-(--color-danger)' : growth !== null && growth > 0 ? 'text-(--color-success)' : ''"
+          >
+            {{ growth === null ? '—' : `${growth > 0 ? '+' : ''}${growth.toFixed(1)}%` }}
+          </p>
+          <p class="mt-0.5 text-xs text-(--color-content-muted)">{{ growthLabel }}</p>
+        </div>
+        <div class="rounded-lg border border-(--color-border) bg-(--color-surface-raised) px-4 py-3">
+          <p class="text-2xl font-semibold tabular-nums tracking-tight">
+            {{ (report?.summary?.average_clicks_per_day ?? 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) }}
+          </p>
+          <p class="mt-0.5 text-xs text-(--color-content-muted)">Average clicks/day</p>
+        </div>
+        <div class="rounded-lg border border-(--color-border) bg-(--color-surface-raised) px-4 py-3">
+          <p class="text-2xl font-semibold tabular-nums tracking-tight">
+            {{ peakHour?.value ?? '—' }}
+          </p>
+          <p class="mt-0.5 text-xs text-(--color-content-muted)">
+            Peak hour<span v-if="peakHour"> · {{ formatNumber(peakHour.clicks) }} clicks</span>
+          </p>
+        </div>
+      </section>
+
       <UiCard title="Clicks over time">
         <AnalyticsChart
           v-if="series.length"

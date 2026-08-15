@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -14,8 +15,11 @@ import (
 	"github.com/rioprastiawan/shorturl/apps/server/internal/authctx"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/database"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/httpx"
+	"github.com/rioprastiawan/shorturl/apps/server/internal/security"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/store"
 )
+
+const invitationTTL = 7 * 24 * time.Hour
 
 // errUnknownUser is a 404 that names the missing thing, because the caller
 // typed the email and needs to know it did not match anyone. Membership is
@@ -200,6 +204,96 @@ func (s *Service) AddMemberByEmail(ctx context.Context, workspaceID uuid.UUID, e
 		Role:      authctx.Role(member.Role),
 		CreatedAt: member.CreatedAt,
 	}, nil
+}
+
+// CreateInvitation creates a bearer link that can be redeemed once to create
+// an account and join this workspace. The plaintext token is never persisted.
+func (s *Service) CreateInvitation(ctx context.Context, workspaceID, createdBy uuid.UUID, role authctx.Role) (*InvitationDTO, error) {
+	token, err := security.NewToken(32)
+	if err != nil {
+		return nil, httpx.Internal(err)
+	}
+	expiresAt := time.Now().Add(invitationTTL)
+	var id uuid.UUID
+	var createdAt time.Time
+	if err := s.pool.QueryRow(ctx, `INSERT INTO workspace_invitations
+		(workspace_id, token_hash, role, created_by, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, created_at`, workspaceID, security.HashToken(token), string(role), createdBy, expiresAt).Scan(&id, &createdAt); err != nil {
+		return nil, httpx.Internal(err)
+	}
+	return &InvitationDTO{ID: id, Token: token, Role: string(role), ExpiresAt: expiresAt, CreatedAt: createdAt}, nil
+}
+
+func (s *Service) ListInvitations(ctx context.Context, workspaceID uuid.UUID) ([]InvitationDTO, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, role, expires_at, accepted_at, revoked_at, created_at
+		FROM workspace_invitations WHERE workspace_id = $1 ORDER BY created_at DESC`, workspaceID)
+	if err != nil {
+		return nil, httpx.Internal(err)
+	}
+	defer rows.Close()
+	items := make([]InvitationDTO, 0)
+	for rows.Next() {
+		var item InvitationDTO
+		if err := rows.Scan(&item.ID, &item.Role, &item.ExpiresAt, &item.AcceptedAt, &item.RevokedAt, &item.CreatedAt); err != nil {
+			return nil, httpx.Internal(err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, httpx.Internal(err)
+	}
+	return items, nil
+}
+
+func (s *Service) RevokeInvitation(ctx context.Context, workspaceID, invitationID uuid.UUID) error {
+	result, err := s.pool.Exec(ctx, `UPDATE workspace_invitations SET revoked_at = now()
+		WHERE id = $1 AND workspace_id = $2 AND accepted_at IS NULL AND revoked_at IS NULL`, invitationID, workspaceID)
+	if err != nil {
+		return httpx.Internal(err)
+	}
+	if result.RowsAffected() == 0 {
+		return httpx.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Service) RenewInvitation(ctx context.Context, workspaceID, invitationID, createdBy uuid.UUID) (*InvitationDTO, error) {
+	token, err := security.NewToken(32)
+	if err != nil {
+		return nil, httpx.Internal(err)
+	}
+	expiresAt := time.Now().Add(invitationTTL)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, httpx.Internal(err)
+	}
+	defer tx.Rollback(ctx)
+
+	var role string
+	err = tx.QueryRow(ctx, `UPDATE workspace_invitations SET revoked_at = now()
+		WHERE id = $1 AND workspace_id = $2 AND accepted_at IS NULL
+		RETURNING role`, invitationID, workspaceID).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, httpx.ErrNotFound
+	}
+	if err != nil {
+		return nil, httpx.Internal(err)
+	}
+	var renewed InvitationDTO
+	err = tx.QueryRow(ctx, `INSERT INTO workspace_invitations
+		(workspace_id, token_hash, role, created_by, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, role, expires_at, created_at`, workspaceID, security.HashToken(token), role, createdBy, expiresAt).
+		Scan(&renewed.ID, &renewed.Role, &renewed.ExpiresAt, &renewed.CreatedAt)
+	if err != nil {
+		return nil, httpx.Internal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, httpx.Internal(err)
+	}
+	renewed.Token = token
+	return &renewed, nil
 }
 
 // UpdateMemberRole changes an existing member's role.

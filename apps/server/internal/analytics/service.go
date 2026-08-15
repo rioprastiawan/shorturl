@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -199,8 +200,38 @@ func (s *Service) Clicks(ctx context.Context, workspaceID uuid.UUID, rng Range) 
 	}
 
 	points := make([]SeriesPoint, 0, len(series))
+	var totalClicks int64
 	for _, row := range series {
 		points = append(points, SeriesPoint{Period: row.Period, Clicks: row.Clicks})
+		totalClicks += row.Clicks
+	}
+
+	span := rng.To.Sub(rng.From)
+	previousClicks, err := s.q.ClicksInRange(ctx, store.ClicksInRangeParams{
+		WorkspaceID: workspaceID,
+		FromTime:    rng.From.Add(-span),
+		ToTime:      rng.From,
+	})
+	if err != nil {
+		return ClicksResponse{}, httpx.Internal(err)
+	}
+	fromDay, toDay := rng.Days()
+	uniqueVisitors, err := s.q.UniqueVisitorsInRange(ctx, store.UniqueVisitorsInRangeParams{
+		WorkspaceID: workspaceID,
+		FromDay:     fromDay,
+		ToDay:       toDay,
+	})
+	if err != nil {
+		return ClicksResponse{}, httpx.Internal(err)
+	}
+	var growth *float64
+	if previousClicks > 0 {
+		value := (float64(totalClicks-previousClicks) / float64(previousClicks)) * 100
+		growth = &value
+	}
+	days := span.Hours() / 24
+	if days < 1 {
+		days = 1
 	}
 
 	top, err := s.q.TopLinks(ctx, store.TopLinksParams{
@@ -230,7 +261,14 @@ func (s *Service) Clicks(ctx context.Context, workspaceID uuid.UUID, rng Range) 
 		From:        rng.From,
 		To:          rng.To,
 		Series:      points,
-		TopLinks:    links,
+		Summary: ClickSummary{
+			TotalClicks:         totalClicks,
+			UniqueVisitors:      uniqueVisitors,
+			PreviousClicks:      previousClicks,
+			GrowthPercent:       growth,
+			AverageClicksPerDay: float64(totalClicks) / days,
+		},
+		TopLinks: links,
 	}
 
 	for _, breakdown := range []struct {
@@ -239,15 +277,40 @@ func (s *Service) Clicks(ctx context.Context, workspaceID uuid.UUID, rng Range) 
 	}{
 		{DimensionReferrer, &out.Referrers},
 		{DimensionUTMSource, &out.UTMSources},
+		{DimensionUTMMedium, &out.UTMMediums},
+		{DimensionUTMCampaign, &out.UTMCampaigns},
 		{DimensionDevice, &out.Devices},
 		{DimensionBrowser, &out.Browsers},
 		{DimensionOS, &out.OS},
+		{DimensionCountry, &out.Countries},
 	} {
 		values, err := s.dimension(ctx, workspaceID, breakdown.dimension, rng)
 		if err != nil {
 			return ClicksResponse{}, err
 		}
 		*breakdown.target = values
+	}
+
+	hours, err := s.q.ClicksByHourOfDay(ctx, store.ClicksByHourOfDayParams{
+		WorkspaceID: workspaceID, FromTime: rng.From, ToTime: rng.To,
+	})
+	if err != nil {
+		return ClicksResponse{}, httpx.Internal(err)
+	}
+	for _, row := range hours {
+		out.Hours = append(out.Hours, DimensionCount{Value: fmt.Sprintf("%02d:00 UTC", row.Hour), Clicks: row.Clicks})
+	}
+	weekdayNames := [...]string{"", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+	weekdays, err := s.q.ClicksByWeekday(ctx, store.ClicksByWeekdayParams{
+		WorkspaceID: workspaceID, FromTime: rng.From, ToTime: rng.To,
+	})
+	if err != nil {
+		return ClicksResponse{}, httpx.Internal(err)
+	}
+	for _, row := range weekdays {
+		if row.Weekday >= 1 && row.Weekday <= 7 {
+			out.Weekdays = append(out.Weekdays, DimensionCount{Value: weekdayNames[row.Weekday], Clicks: row.Clicks})
+		}
 	}
 
 	return out, nil

@@ -37,6 +37,10 @@ logs: ## Follow container logs
 test: ## Run all tests
 	@cd $(SERVER_DIR) && go test ./...
 
+.PHONY: load-test
+load-test: ## Continuously create links; requires SHORTURL_API_KEY
+	@./scripts/load-create-links.sh
+
 .PHONY: lint
 lint: ## Vet the Go code and typecheck the dashboard
 	@cd $(SERVER_DIR) && gofmt -l . | tee /dev/stderr | (! read -r)

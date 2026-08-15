@@ -12,6 +12,113 @@ import (
 	"github.com/google/uuid"
 )
 
+const clicksByHourOfDay = `-- name: ClicksByHourOfDay :many
+SELECT
+    extract(hour FROM bucket)::integer AS hour,
+    sum(clicks)::bigint AS clicks
+FROM click_hourly
+WHERE workspace_id = $1
+  AND bucket >= $2
+  AND bucket < $3
+GROUP BY hour
+ORDER BY hour
+`
+
+type ClicksByHourOfDayParams struct {
+	WorkspaceID uuid.UUID
+	FromTime    time.Time
+	ToTime      time.Time
+}
+
+type ClicksByHourOfDayRow struct {
+	Hour   int32
+	Clicks int64
+}
+
+func (q *Queries) ClicksByHourOfDay(ctx context.Context, arg ClicksByHourOfDayParams) ([]ClicksByHourOfDayRow, error) {
+	rows, err := q.db.Query(ctx, clicksByHourOfDay, arg.WorkspaceID, arg.FromTime, arg.ToTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClicksByHourOfDayRow{}
+	for rows.Next() {
+		var i ClicksByHourOfDayRow
+		if err := rows.Scan(&i.Hour, &i.Clicks); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const clicksByWeekday = `-- name: ClicksByWeekday :many
+SELECT
+    extract(isodow FROM bucket)::integer AS weekday,
+    sum(clicks)::bigint AS clicks
+FROM click_hourly
+WHERE workspace_id = $1
+  AND bucket >= $2
+  AND bucket < $3
+GROUP BY weekday
+ORDER BY weekday
+`
+
+type ClicksByWeekdayParams struct {
+	WorkspaceID uuid.UUID
+	FromTime    time.Time
+	ToTime      time.Time
+}
+
+type ClicksByWeekdayRow struct {
+	Weekday int32
+	Clicks  int64
+}
+
+func (q *Queries) ClicksByWeekday(ctx context.Context, arg ClicksByWeekdayParams) ([]ClicksByWeekdayRow, error) {
+	rows, err := q.db.Query(ctx, clicksByWeekday, arg.WorkspaceID, arg.FromTime, arg.ToTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClicksByWeekdayRow{}
+	for rows.Next() {
+		var i ClicksByWeekdayRow
+		if err := rows.Scan(&i.Weekday, &i.Clicks); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const clicksInRange = `-- name: ClicksInRange :one
+SELECT coalesce(sum(clicks), 0)::bigint
+FROM click_hourly
+WHERE workspace_id = $1
+  AND bucket >= $2
+  AND bucket < $3
+`
+
+type ClicksInRangeParams struct {
+	WorkspaceID uuid.UUID
+	FromTime    time.Time
+	ToTime      time.Time
+}
+
+func (q *Queries) ClicksInRange(ctx context.Context, arg ClicksInRangeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, clicksInRange, arg.WorkspaceID, arg.FromTime, arg.ToTime)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const clicksOverTime = `-- name: ClicksOverTime :many
 SELECT
     date_trunc($1::text, bucket)::timestamptz AS period,
@@ -118,6 +225,21 @@ DELETE FROM click_events WHERE clicked_at < $1
 // are tiny. Called by the worker's periodic maintenance pass.
 func (q *Queries) DeleteClickEventsBefore(ctx context.Context, clickedAt time.Time) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteClickEventsBefore, clickedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteVisitorDimensionsBefore = `-- name: DeleteVisitorDimensionsBefore :execrows
+DELETE FROM click_dimension_daily
+WHERE dimension = 'visitor' AND day < $1
+`
+
+// Visitor hashes have the same retention window as raw click events. Other
+// aggregate dimensions remain tiny and are retained indefinitely.
+func (q *Queries) DeleteVisitorDimensionsBefore(ctx context.Context, day time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteVisitorDimensionsBefore, day)
 	if err != nil {
 		return 0, err
 	}
@@ -310,6 +432,28 @@ func (q *Queries) TopLinks(ctx context.Context, arg TopLinksParams) ([]TopLinksR
 		return nil, err
 	}
 	return items, nil
+}
+
+const uniqueVisitorsInRange = `-- name: UniqueVisitorsInRange :one
+SELECT count(DISTINCT value)::bigint
+FROM click_dimension_daily
+WHERE workspace_id = $1
+  AND dimension = 'visitor'
+  AND day >= $2
+  AND day <= $3
+`
+
+type UniqueVisitorsInRangeParams struct {
+	WorkspaceID uuid.UUID
+	FromDay     time.Time
+	ToDay       time.Time
+}
+
+func (q *Queries) UniqueVisitorsInRange(ctx context.Context, arg UniqueVisitorsInRangeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, uniqueVisitorsInRange, arg.WorkspaceID, arg.FromDay, arg.ToDay)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const upsertClickDimensionDaily = `-- name: UpsertClickDimensionDaily :exec

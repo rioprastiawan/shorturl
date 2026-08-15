@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Member, Role } from '~/types/api'
+import type { Member, Role, WorkspaceInvitation } from '~/types/api'
 import { ApiError } from '~/composables/useApi'
 import { formatDate } from '~/components/dashboard/format'
 import { useServices } from '~/services'
@@ -42,10 +42,81 @@ function isSelf(member: Member): boolean {
 /* ------------------------------------------------------------ add member */
 
 const inviteEmail = ref('')
-const inviteRole = ref<Role>('member')
+const inviteRole = ref<Exclude<Role, 'owner'>>('member')
 const inviting = ref(false)
 const inviteEmailError = ref<string | undefined>()
 const inviteError = ref<string | null>(null)
+const invitationLink = ref('')
+const generatingInvitation = ref(false)
+const invitations = ref<WorkspaceInvitation[]>([])
+const invitationsLoading = ref(false)
+const invitationActionId = ref<string>()
+
+async function loadInvitations() {
+  if (!canManage.value || !ws.activeId.value) return
+  invitationsLoading.value = true
+  try {
+    invitations.value = (await workspaces.invitations(ws.requireActiveId())).data
+  } catch (e) {
+    inviteError.value = e instanceof ApiError ? e.message : 'Could not load invitations.'
+  } finally {
+    invitationsLoading.value = false
+  }
+}
+
+watch([ws.activeId, canManage], loadInvitations, { immediate: true })
+
+function invitationState(invitation: WorkspaceInvitation) {
+  if (invitation.accepted_at) return { label: 'Used', tone: 'neutral' as const }
+  if (invitation.revoked_at) return { label: 'Revoked', tone: 'neutral' as const }
+  if (new Date(invitation.expires_at).getTime() <= Date.now()) return { label: 'Expired', tone: 'warning' as const }
+  return { label: 'Active', tone: 'success' as const }
+}
+
+function revealInvitation(invitation: WorkspaceInvitation) {
+  invitationLink.value = `${window.location.origin}/register?invite=${encodeURIComponent(invitation.token)}`
+}
+
+async function createInvitation() {
+  generatingInvitation.value = true
+  inviteError.value = null
+  try {
+    const invitation = await workspaces.createInvitation(ws.requireActiveId(), { role: inviteRole.value })
+    revealInvitation(invitation)
+    await loadInvitations()
+  } catch (e) {
+    inviteError.value = e instanceof ApiError ? e.message : 'Could not create the invitation.'
+  } finally {
+    generatingInvitation.value = false
+  }
+}
+
+async function renewInvitation(invitation: WorkspaceInvitation) {
+  invitationActionId.value = invitation.id
+  try {
+    const renewed = await workspaces.renewInvitation(ws.requireActiveId(), invitation.id)
+    revealInvitation(renewed)
+    await loadInvitations()
+    toast.success('A new invitation link was generated.')
+  } catch (e) {
+    toast.error(e instanceof ApiError ? e.message : 'Could not renew the invitation.')
+  } finally {
+    invitationActionId.value = undefined
+  }
+}
+
+async function revokeInvitation(invitation: WorkspaceInvitation) {
+  invitationActionId.value = invitation.id
+  try {
+    await workspaces.revokeInvitation(ws.requireActiveId(), invitation.id)
+    await loadInvitations()
+    toast.success('Invitation revoked.')
+  } catch (e) {
+    toast.error(e instanceof ApiError ? e.message : 'Could not revoke the invitation.')
+  } finally {
+    invitationActionId.value = undefined
+  }
+}
 
 async function addMember() {
   inviteEmailError.value = undefined
@@ -63,11 +134,11 @@ async function addMember() {
     toast.success('Member added')
   } catch (e) {
     if (e instanceof ApiError) {
-      // There are no invitations in the MVP: the server can only attach an
-      // account that already exists, so say so plainly instead of showing a
-      // bare "not found".
       if (e.status === 404) {
-        inviteEmailError.value = 'No user with that email address. Ask them to register first.'
+        await createInvitation()
+        if (invitationLink.value) {
+          toast.success('User not found, so an invitation link was generated instead.')
+        }
       } else {
         inviteEmailError.value = e.field('email')
         if (!inviteEmailError.value) inviteError.value = e.message
@@ -175,12 +246,18 @@ async function confirmRemove() {
     <UiCard
       v-if="canManage"
       title="Add a member"
-      description="The person needs a ShortURL account already — there are no email invitations yet."
+      description="Add an existing account by email, or generate a one-time registration link for someone new."
     >
       <form class="flex flex-col gap-4" novalidate @submit.prevent="addMember">
         <DashboardFormAlert v-if="inviteError">
           {{ inviteError }}
         </DashboardFormAlert>
+
+        <div v-if="invitationLink" class="rounded-md border border-(--color-border) bg-(--color-surface-muted) p-3">
+          <p class="mb-2 text-sm font-medium">Invitation link</p>
+          <UiCopyButton :value="invitationLink" show-value label="Copy invitation link" />
+          <p class="mt-2 text-xs text-(--color-content-muted)">This link can be used once and expires after 7 days.</p>
+        </div>
 
         <div class="flex flex-col gap-4 sm:flex-row sm:items-start">
           <div class="flex-1">
@@ -213,11 +290,66 @@ async function confirmRemove() {
 
           <div class="sm:pt-7">
             <UiButton type="submit" :loading="inviting">
-              Add
+              Add existing user
             </UiButton>
           </div>
         </div>
+
+        <div class="flex items-center gap-3 border-t border-(--color-border) pt-4">
+          <UiButton type="button" variant="secondary" :loading="generatingInvitation" @click="createInvitation">
+            Generate invitation link
+          </UiButton>
+          <span class="text-xs text-(--color-content-muted)">Uses the selected role; no email is required.</span>
+        </div>
       </form>
+    </UiCard>
+
+    <UiCard v-if="canManage" :title="`Invitations (${invitations.length})`" :padded="false">
+      <p v-if="invitationsLoading" class="px-5 py-6 text-sm text-(--color-content-muted)">
+        Loading invitations…
+      </p>
+      <UiEmptyState
+        v-else-if="!invitations.length"
+        title="No invitations"
+        description="Generated invitation links will appear here."
+      />
+      <ul v-else class="divide-y divide-(--color-border)">
+        <li
+          v-for="invitation in invitations"
+          :key="invitation.id"
+          class="flex flex-wrap items-center gap-3 px-5 py-3"
+        >
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium capitalize">
+              {{ invitation.role }} invitation
+            </p>
+            <p class="text-xs text-(--color-content-muted)">
+              Created {{ formatDate(invitation.created_at) }} · Expires {{ formatDate(invitation.expires_at) }}
+            </p>
+          </div>
+          <UiBadge :tone="invitationState(invitation).tone" dot>
+            {{ invitationState(invitation).label }}
+          </UiBadge>
+          <UiButton
+            v-if="!invitation.accepted_at"
+            variant="secondary"
+            size="sm"
+            :loading="invitationActionId === invitation.id"
+            @click="renewInvitation(invitation)"
+          >
+            Generate new link
+          </UiButton>
+          <UiButton
+            v-if="!invitation.accepted_at && !invitation.revoked_at && invitationState(invitation).label === 'Active'"
+            variant="ghost"
+            size="sm"
+            :disabled="invitationActionId === invitation.id"
+            @click="revokeInvitation(invitation)"
+          >
+            <span class="text-(--color-danger)">Revoke</span>
+          </UiButton>
+        </li>
+      </ul>
     </UiCard>
 
     <UiCard :title="`Members (${members.length})`" :padded="false">

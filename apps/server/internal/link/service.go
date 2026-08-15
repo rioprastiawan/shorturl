@@ -3,7 +3,6 @@ package link
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -69,8 +68,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (View, error) {
 	if in.Metadata != nil {
 		if len(in.Metadata) > MaxMetadataBytes {
 			v.Add("metadata", "must be at most %d bytes", MaxMetadataBytes)
-		} else if !json.Valid(in.Metadata) {
-			v.Add("metadata", "must be a valid JSON object")
+		} else if err := validateMetadataObject(in.Metadata); err != nil {
+			v.Add("metadata", "%s", err.Error())
 		}
 	}
 
@@ -106,6 +105,26 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (View, error) {
 
 	if v.HasErrors() {
 		return View{}, httpx.Invalid(v.Fields())
+	}
+
+	// Dashboard-created links get a persisted page preview. The form normally
+	// supplies one from the preview endpoint; this fallback covers a fast submit
+	// or a client that skipped that request. API integrations are not made to
+	// wait on third-party websites and can continue supplying their own metadata.
+	preview, hasPreview := previewFromMetadata(in.Metadata)
+	if in.CreatedVia != "api" && !hasPreview {
+		fetched, fetchErr := FetchPageMetadata(ctx, destination)
+		if fetchErr != nil {
+			s.logger.Warn("could not fetch link metadata", slog.String("url", destination), slog.String("error", fetchErr.Error()))
+		} else if merged, mergeErr := mergePreviewMetadata(in.Metadata, fetched); mergeErr == nil {
+			in.Metadata, preview, hasPreview = merged, fetched, true
+		} else {
+			s.logger.Warn("could not store link metadata", slog.String("url", destination), slog.String("error", mergeErr.Error()))
+		}
+	}
+	if (in.Title == nil || strings.TrimSpace(*in.Title) == "") && hasPreview && preview.Title != "" {
+		title := preview.Title
+		in.Title = &title
 	}
 
 	if chosen == "" {
@@ -231,8 +250,8 @@ func (s *Service) Update(ctx context.Context, workspaceID, linkID uuid.UUID, in 
 	if in.SetMetadata && in.Metadata != nil {
 		if len(in.Metadata) > MaxMetadataBytes {
 			v.Add("metadata", "must be at most %d bytes", MaxMetadataBytes)
-		} else if !json.Valid(in.Metadata) {
-			v.Add("metadata", "must be a valid JSON object")
+		} else if err := validateMetadataObject(in.Metadata); err != nil {
+			v.Add("metadata", "%s", err.Error())
 		}
 	}
 
@@ -290,6 +309,20 @@ func (s *Service) Update(ctx context.Context, workspaceID, linkID uuid.UUID, in 
 	view := View{Link: row, Hostname: targetHostname}
 	s.warm(ctx, view)
 	return view, nil
+}
+
+// Preview fetches metadata without persisting a link. It powers the create
+// form and uses the same SSRF-safe fetcher as Create's fallback.
+func (s *Service) Preview(ctx context.Context, rawURL string) (PageMetadata, error) {
+	destination, err := urlx.ValidateDestination(rawURL)
+	if err != nil {
+		return PageMetadata{}, httpx.Invalid(map[string][]string{"destination_url": {err.Error()}})
+	}
+	preview, err := FetchPageMetadata(ctx, destination)
+	if err != nil {
+		return PageMetadata{}, httpx.Invalid(map[string][]string{"destination_url": {"could not read page metadata: " + err.Error()}})
+	}
+	return preview, nil
 }
 
 // Delete removes a link and its cache entry.

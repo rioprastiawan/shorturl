@@ -100,7 +100,7 @@ func TestClearSessionCookie(t *testing.T) {
 }
 
 func TestReadCookie(t *testing.T) {
-	svc := NewService(nil, testConfig(false))
+	svc := NewService(nil, nil, testConfig(false))
 
 	tests := []struct {
 		name   string

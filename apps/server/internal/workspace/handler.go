@@ -36,8 +36,91 @@ func (h *Handler) WorkspaceRoutes(r chi.Router) {
 
 	r.Get("/members", h.listMembers)
 	r.Post("/members", h.addMember)
+	r.Post("/invitations", h.createInvitation)
+	r.Get("/invitations", h.listInvitations)
+	r.Post("/invitations/{invitationId}/renew", h.renewInvitation)
+	r.Delete("/invitations/{invitationId}", h.revokeInvitation)
 	r.Patch("/members/{userId}", h.updateMemberRole)
 	r.Delete("/members/{userId}", h.removeMember)
+}
+
+func (h *Handler) listInvitations(w http.ResponseWriter, r *http.Request) {
+	m := authctx.MustMembership(r.Context())
+	if !m.Role.CanManageMembers() {
+		httpx.Error(w, r, httpx.ErrForbidden)
+		return
+	}
+	items, err := h.svc.ListInvitations(r.Context(), m.WorkspaceID)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.List(w, items, httpx.Meta{})
+}
+
+func (h *Handler) invitationID(w http.ResponseWriter, r *http.Request) (authctx.Membership, uuid.UUID, bool) {
+	m := authctx.MustMembership(r.Context())
+	if !m.Role.CanManageMembers() {
+		httpx.Error(w, r, httpx.ErrForbidden)
+		return m, uuid.Nil, false
+	}
+	id, err := httpx.UUIDParam(chi.URLParam(r, "invitationId"))
+	if err != nil {
+		httpx.Error(w, r, err)
+		return m, uuid.Nil, false
+	}
+	return m, id, true
+}
+
+func (h *Handler) revokeInvitation(w http.ResponseWriter, r *http.Request) {
+	m, id, ok := h.invitationID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.svc.RevokeInvitation(r.Context(), m.WorkspaceID, id); err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+func (h *Handler) renewInvitation(w http.ResponseWriter, r *http.Request) {
+	m, id, ok := h.invitationID(w, r)
+	if !ok {
+		return
+	}
+	invitation, err := h.svc.RenewInvitation(r.Context(), m.WorkspaceID, id, m.UserID)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.Data(w, http.StatusCreated, invitation)
+}
+
+func (h *Handler) createInvitation(w http.ResponseWriter, r *http.Request) {
+	m := authctx.MustMembership(r.Context())
+	if !m.Role.CanManageMembers() {
+		httpx.Error(w, r, httpx.ErrForbidden)
+		return
+	}
+	var req struct {
+		Role string `json:"role"`
+	}
+	if err := httpx.Decode(w, r, &req); err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	role, err := parseRole(req.Role)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	invitation, err := h.svc.CreateInvitation(r.Context(), m.WorkspaceID, m.UserID, role)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.Data(w, http.StatusCreated, invitation)
 }
 
 // Mount registers the whole subtree with RequireWorkspace applied to the

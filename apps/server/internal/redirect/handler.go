@@ -93,11 +93,16 @@ func (h *Handler) recordClick(r *http.Request, res link.Resolution) {
 	}
 
 	query := r.URL.Query()
+	country := strings.ToUpper(strings.TrimSpace(r.Header.Get("CF-IPCountry")))
+	if len(country) != 2 || country == "XX" {
+		country = ""
+	}
 	h.producer.Enqueue(r.Context(), analytics.ClickEvent{
 		LinkID:      res.LinkID,
 		WorkspaceID: res.WorkspaceID,
 		ClickedAt:   time.Now().UTC(),
 		IPHash:      security.HashIP(h.cfg.IPHashSecret, middleware.ClientIP(r)),
+		Country:     country,
 		UserAgent:   r.UserAgent(),
 		Referrer:    r.Referer(),
 		UTMSource:   query.Get("utm_source"),
