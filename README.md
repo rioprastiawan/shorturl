@@ -58,6 +58,10 @@ creates your administrator account and first workspace.
 Read [docs/deployment.md](docs/deployment.md) for DNS setup, custom domains,
 backups, upgrades, and **moving the whole deployment to another server**.
 
+For a Dokploy deployment backed by images published from GitHub Actions, use
+[`docker-compose.dokploy.yml`](docker-compose.dokploy.yml) and follow
+[`docs/dokploy.md`](docs/dokploy.md).
+
 ## Use the API
 
 ```bash

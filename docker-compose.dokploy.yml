@@ -1,0 +1,145 @@
+name: shorturl
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-server-image: &server-image
+  image: ${SERVER_IMAGE:?Set SERVER_IMAGE to the GHCR server image}
+
+services:
+  migrate:
+    <<: *server-image
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://${POSTGRES_USER:-shorturl}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-shorturl}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+    logging: *default-logging
+
+  server:
+    <<: *server-image
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      APP_NAME: ${APP_NAME:-ShortURL}
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in Dokploy}
+      APP_URL: https://${APP_DOMAIN}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SERVER_PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-shorturl}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-shorturl}?sslmode=disable
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in Dokploy}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in Dokploy}
+      IP_HASH_SECRET: ${IP_HASH_SECRET:?Set IP_HASH_SECRET in Dokploy}
+      RATE_LIMIT_AUTH_PER_MINUTE: ${RATE_LIMIT_AUTH_PER_MINUTE:-10}
+      RATE_LIMIT_API_PER_MINUTE: ${RATE_LIMIT_API_PER_MINUTE:-120}
+      RATE_LIMIT_REDIRECT_PER_MINUTE: ${RATE_LIMIT_REDIRECT_PER_MINUTE:-600}
+      CACHE_TTL_MINUTES: ${CACHE_TTL_MINUTES:-60}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    expose: ["8080"]
+    networks: [proxy, internal]
+    healthcheck:
+      test: ["CMD", "/app/shorturl", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+  worker:
+    <<: *server-image
+    command: ["worker"]
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://${POSTGRES_USER:-shorturl}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-shorturl}?sslmode=disable
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in Dokploy}
+      CLICK_RETENTION_DAYS: ${CLICK_RETENTION_DAYS:-400}
+      CLICK_BATCH_SIZE: ${CLICK_BATCH_SIZE:-256}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
+    logging: *default-logging
+
+  web:
+    image: ${WEB_IMAGE:?Set WEB_IMAGE to the GHCR web image}
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    expose: ["8080"]
+    networks: [proxy]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shorturl}
+      POSTGRES_USER: ${POSTGRES_USER:-shorturl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Dokploy}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shorturl} -d ${POSTGRES_DB:-shorturl}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in Dokploy}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *default-logging
+
+networks:
+  proxy:
+  internal:
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
