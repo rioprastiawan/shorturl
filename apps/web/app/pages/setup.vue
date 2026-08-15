@@ -160,8 +160,10 @@ async function submit() {
 </script>
 
 <template>
-  <div v-if="checking" class="text-center text-sm text-(--color-content-muted)" role="status">
-    Loading…
+  <div v-if="checking" class="mx-auto flex w-full max-w-md flex-col gap-5" role="status" aria-label="Loading setup">
+    <UiSkeleton height="1.75rem" width="55%" />
+    <UiSkeleton height="0.9rem" width="85%" />
+    <UiSkeleton height="8rem" rounded="lg" />
   </div>
 
   <!-- Completion note. Shown before leaving the wizard because a fresh install

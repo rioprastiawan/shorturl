@@ -34,7 +34,7 @@ const groups = computed(() => {
     ...((role === 'owner' || role === 'admin')
       ? [{ label: t('developer'), items: [
           { to: '/dashboard/api-keys', label: t('api'), icon: 'lucide:key-round', shortcut: 'G I' },
-          { to: '/dashboard/api-docs', label: t('apiDocs'), icon: 'lucide:book-open-code' },
+          { to: '/dashboard/api-docs', label: t('apiDocs'), icon: 'lucide:book-open-text' },
         ] }]
       : []),
     { label: t('system'), items: [

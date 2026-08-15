@@ -121,8 +121,9 @@ async function submit() {
   const redirectType = Number(model.redirect_type); if (redirectType > 0) body.redirect_type = redirectType
   const expiresAt = toRfc3339(model.expires_at); if (expiresAt) body.expires_at = expiresAt
   const password = optional(model.password); if (password) body.password = password
-  const maxClicks = Number(model.max_clicks)
-  if (model.max_clicks.trim() && maxClicks > 0) body.max_clicks = maxClicks
+  const rawMaxClicks = String(model.max_clicks ?? '').trim()
+  const maxClicks = Number(rawMaxClicks)
+  if (rawMaxClicks && Number.isInteger(maxClicks) && maxClicks > 0) body.max_clicks = maxClicks
   submitting.value = true
   try {
     const link = await links.create(workspaceId, body)
@@ -139,7 +140,12 @@ async function submit() {
 
 <template>
   <UiModal v-model="modal.open.value" title="Create a short link" description="Turn a long destination into a link you can share and track." size="lg">
-    <p v-if="loading" class="py-8 text-center text-sm text-(--color-content-muted)">Loading domains…</p>
+    <div v-if="loading" class="space-y-4 py-2" role="status" aria-label="Loading link form">
+      <div v-for="field in 4" :key="field" class="space-y-2">
+        <UiSkeleton height="0.7rem" width="7rem" />
+        <UiSkeleton height="2.25rem" rounded="lg" />
+      </div>
+    </div>
     <div v-else-if="loadError" class="py-6 text-center">
       <p class="text-sm text-(--color-danger)">{{ loadError }}</p>
       <UiButton class="mt-3" variant="secondary" size="sm" @click="loadDomains">Try again</UiButton>
@@ -150,7 +156,10 @@ async function submit() {
     <form v-else class="flex flex-col gap-4" @submit.prevent="submit">
       <DashboardFormAlert v-if="errors.form">{{ errors.form }}</DashboardFormAlert>
       <LinksFormFields v-model="form" :domains="activeDomains" :errors="errors" :disabled="submitting" />
-      <p v-if="previewing" class="text-sm text-(--color-content-muted)">Reading page metadata…</p>
+      <div v-if="previewing" class="flex gap-3 rounded-xl border border-(--color-border) p-3" role="status" aria-label="Loading page preview">
+        <UiSkeleton height="3rem" width="3rem" rounded="lg" />
+        <div class="flex-1 space-y-2"><UiSkeleton width="45%" /><UiSkeleton height="0.75rem" width="80%" /></div>
+      </div>
       <LinksPreviewCard v-else-if="preview" :preview="preview" :destination-url="form.destination_url.trim()" />
       <p v-else-if="previewError" class="text-xs text-(--color-content-muted)">{{ previewError }}</p>
     </form>

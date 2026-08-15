@@ -271,9 +271,9 @@ async function confirmDelete() {
     </section>
 
     <UiCard :padded="false">
-      <p v-if="pending" class="px-5 py-10 text-center text-sm text-(--color-content-muted)" role="status">
-        Loading links…
-      </p>
+      <div v-if="pending" role="status" aria-label="Loading links">
+        <UiSkeletonTable :rows="6" :columns="6" />
+      </div>
 
       <div v-else-if="loadError" class="px-5 py-10 text-center" role="alert">
         <p class="text-sm text-(--color-danger)">
@@ -421,7 +421,7 @@ async function confirmDelete() {
       </template>
     </UiModal>
 
-    <LinkQrModal
+    <LinksQrModal
       v-if="qrTarget"
       v-model="qrOpen"
       :url="qrTarget.short_url"

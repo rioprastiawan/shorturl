@@ -67,7 +67,7 @@ async function create() {
     :class="[
       block ? 'w-full' : '',
       compact
-        ? 'px-2 py-1.5 text-left text-sm text-(--color-content-muted) hover:bg-(--color-surface-muted) hover:text-(--color-content)'
+        ? 'px-2 py-1.5 text-left text-xs text-(--color-content-muted) hover:bg-(--color-surface-muted) hover:text-(--color-content)'
         : 'border border-(--color-border-strong) bg-(--color-surface-raised) px-4 py-2 text-sm shadow-sm hover:bg-(--color-surface-muted)',
     ]"
     @click="show"

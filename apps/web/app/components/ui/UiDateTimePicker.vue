@@ -137,8 +137,7 @@ function useToday() {
       <Icon name="lucide:calendar-days" size="17" class="shrink-0 text-(--color-content-subtle)" />
     </button>
 
-    <Teleport to="body">
-      <Transition name="menu-down">
+    <Transition name="menu-down">
         <div v-if="open" ref="panel" popover="manual" role="dialog" aria-label="Choose date and time" :style="floatingStyle" class="m-0 overflow-y-auto rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-3 text-(--color-content) shadow-2xl">
         <div class="mb-3 flex items-center justify-between">
           <button type="button" class="grid size-8 place-items-center rounded-lg hover:bg-(--color-surface-muted)" aria-label="Previous month" @click="moveMonth(-1)"><Icon name="lucide:chevron-left" size="17" /></button>
@@ -175,8 +174,7 @@ function useToday() {
           </div>
         </div>
         </div>
-      </Transition>
-    </Teleport>
+    </Transition>
     <p v-if="error" class="text-xs text-(--color-danger)" role="alert">{{ error }}</p>
     <p v-else-if="hint" class="text-xs text-(--color-content-muted)">{{ hint }}</p>
   </div>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ClicksReport } from '~/types/api'
-import type { PresetRange } from '~/components/analytics/types'
+import type { CustomRange, PresetRange } from '~/components/analytics/types'
 import AnalyticsBreakdown from '~/components/analytics/Breakdown.vue'
 import AnalyticsChart from '~/components/analytics/Chart.vue'
 import AnalyticsRangePicker from '~/components/analytics/RangePicker.vue'
@@ -16,6 +16,7 @@ const ws = useWorkspaces()
 const { analytics } = useServices()
 
 const range = ref<PresetRange>('7d')
+const customRange = ref<CustomRange | null>(null)
 const report = ref<ClicksReport | null>(null)
 const loading = ref(true)
 const loadError = ref<string | null>(null)
@@ -29,7 +30,10 @@ async function load() {
   loading.value = true
   loadError.value = null
   try {
-    report.value = await analytics.clicks(workspaceId, { range: range.value })
+    report.value = await analytics.clicks(workspaceId, {
+      range: range.value,
+      ...(range.value === 'custom' && customRange.value ? customRange.value : {}),
+    })
   } catch (error) {
     loadError.value = error instanceof ApiError ? error.message : 'Could not load analytics.'
     report.value = null
@@ -39,6 +43,11 @@ async function load() {
 }
 
 watch([range, () => ws.activeId.value], () => load(), { immediate: true })
+
+function applyCustomRange(value: CustomRange) {
+  customRange.value = value
+  if (range.value === 'custom') load()
+}
 
 const series = computed(() => report.value?.series ?? [])
 const topLinks = computed(() => report.value?.top_links ?? [])
@@ -68,12 +77,9 @@ const breakdowns = computed(() => [
   { key: 'utm_sources', title: 'UTM sources', items: report.value?.utm_sources ?? [], empty: 'No utm_source' },
   { key: 'utm_mediums', title: 'UTM mediums', items: report.value?.utm_mediums ?? [], empty: 'No utm_medium' },
   { key: 'utm_campaigns', title: 'UTM campaigns', items: report.value?.utm_campaigns ?? [], empty: 'No utm_campaign' },
-  { key: 'devices', title: 'Devices', items: report.value?.devices ?? [], empty: 'Unknown' },
   { key: 'browsers', title: 'Browsers', items: report.value?.browsers ?? [], empty: 'Unknown' },
   { key: 'os', title: 'Operating systems', items: report.value?.os ?? [], empty: 'Unknown' },
   { key: 'countries', title: 'Countries', items: report.value?.countries ?? [], empty: 'Unknown' },
-  { key: 'hours', title: 'Traffic by hour', items: report.value?.hours ?? [], empty: 'Unknown' },
-  { key: 'weekdays', title: 'Traffic by weekday', items: report.value?.weekdays ?? [], empty: 'Unknown' },
 ].filter(card => card.items.length > 0))
 
 const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 0)
@@ -91,12 +97,26 @@ const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 
           Clicks across every link in this workspace.
         </p>
       </div>
-      <AnalyticsRangePicker v-model="range" :disabled="loading" />
+      <AnalyticsRangePicker
+        v-model="range"
+        :custom-range="customRange"
+        :disabled="loading"
+        @custom="applyCustomRange"
+      />
     </header>
 
-    <p v-if="loading" class="text-sm text-(--color-content-muted)" role="status">
-      Loading analytics…
-    </p>
+    <div v-if="loading" class="flex flex-col gap-4" role="status" aria-label="Loading analytics">
+      <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div v-for="item in 5" :key="item" class="rounded-lg border border-(--color-border) bg-(--color-surface-raised) px-4 py-3">
+          <UiSkeleton height="1.7rem" width="45%" /><UiSkeleton class="mt-2" height="0.65rem" width="70%" />
+        </div>
+      </section>
+      <div class="rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-5">
+        <UiSkeleton height="1rem" width="9rem" />
+        <UiSkeleton class="mt-5" height="19rem" rounded="lg" />
+      </div>
+      <div class="grid gap-4 lg:grid-cols-2"><UiSkeleton v-for="item in 2" :key="item" height="19rem" rounded="lg" /></div>
+    </div>
 
     <UiCard v-else-if="loadError">
       <p class="text-sm text-(--color-danger)" role="alert">
@@ -168,6 +188,13 @@ const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 
           No time series for this range.
         </p>
       </UiCard>
+
+      <AnalyticsInsightCharts
+        :top-links="topLinks"
+        :devices="report?.devices ?? []"
+        :hours="report?.hours ?? []"
+        :weekdays="report?.weekdays ?? []"
+      />
 
       <UiCard v-if="topLinks.length" title="Top links" :padded="false">
         <div class="overflow-x-auto">

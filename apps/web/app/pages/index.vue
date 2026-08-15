@@ -41,8 +41,9 @@ onMounted(async () => {
 
 <template>
   <div class="grid min-h-dvh place-items-center p-6">
-    <p class="text-sm text-(--color-content-muted)" role="status" aria-live="polite">
-      Loading…
-    </p>
+    <div class="flex w-48 flex-col items-center gap-3" role="status" aria-label="Loading application">
+      <UiSkeleton height="2.5rem" width="2.5rem" rounded="lg" />
+      <UiSkeleton height="0.8rem" width="70%" />
+    </div>
   </div>
 </template>

@@ -71,9 +71,18 @@ const errorMessage = computed(() => {
       </UiButton>
     </header>
 
-    <p v-if="pending && !overview" class="text-sm text-(--color-content-muted)" role="status">
-      Loading…
-    </p>
+    <div v-if="pending && !overview" class="flex flex-col gap-5" role="status" aria-label="Loading dashboard overview">
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div v-for="item in 4" :key="item" class="rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-4">
+          <UiSkeleton height="0.7rem" width="45%" />
+          <UiSkeleton class="mt-3" height="1.8rem" width="35%" />
+        </div>
+      </div>
+      <div class="rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-5">
+        <UiSkeleton height="1rem" width="9rem" />
+        <div class="mt-5 space-y-4"><UiSkeleton v-for="row in 4" :key="row" height="2.5rem" rounded="lg" /></div>
+      </div>
+    </div>
 
     <UiCard v-else-if="errorMessage" title="Could not load the overview">
       <p class="text-sm text-(--color-content-muted)" role="alert">

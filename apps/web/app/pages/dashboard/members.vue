@@ -293,9 +293,9 @@ async function confirmRemove() {
     </UiCard>
 
     <UiCard v-if="canManage" :title="`Invitations (${invitations.length})`" :padded="false">
-      <p v-if="invitationsLoading" class="px-5 py-6 text-sm text-(--color-content-muted)">
-        Loading invitations…
-      </p>
+      <div v-if="invitationsLoading" class="space-y-4 px-5 py-5" role="status" aria-label="Loading invitations">
+        <div v-for="row in 3" :key="row" class="flex items-center justify-between gap-4"><div class="flex-1 space-y-2"><UiSkeleton width="40%" /><UiSkeleton height="0.65rem" width="65%" /></div><UiSkeleton height="2rem" width="5rem" rounded="lg" /></div>
+      </div>
       <UiEmptyState
         v-else-if="!invitations.length"
         title="No invitations"
@@ -341,9 +341,9 @@ async function confirmRemove() {
     </UiCard>
 
     <UiCard :title="`Members (${members.length})`" :padded="false">
-      <p v-if="pending && !data" class="px-5 py-6 text-sm text-(--color-content-muted)" role="status">
-        Loading…
-      </p>
+      <div v-if="pending && !data" role="status" aria-label="Loading members">
+        <UiSkeletonTable :rows="5" :columns="4" />
+      </div>
 
       <div v-else-if="loadError" class="flex flex-col items-start gap-3 px-5 py-6">
         <p class="text-sm text-(--color-danger)" role="alert">

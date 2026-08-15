@@ -16,7 +16,8 @@ export interface LinkFormModel {
   /** `datetime-local` value: "YYYY-MM-DDTHH:mm" in the browser's zone. */
   expires_at: string
   password: string
-  max_clicks: string
+  /** Number inputs emit a number after user interaction, but use '' when empty. */
+  max_clicks: string | number
   /** Edit only: explicitly clear an existing password. */
   remove_password: boolean
 }

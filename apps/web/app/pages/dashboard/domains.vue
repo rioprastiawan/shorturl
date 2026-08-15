@@ -250,9 +250,9 @@ async function confirmDelete() {
     </UiCard>
 
     <!-- List -->
-    <p v-if="loading" class="text-sm text-(--color-content-muted)" role="status">
-      Loading domains…
-    </p>
+    <div v-if="loading" class="rounded-xl border border-(--color-border) bg-(--color-surface-raised)" role="status" aria-label="Loading domains">
+      <UiSkeletonTable :rows="4" :columns="4" />
+    </div>
 
     <UiCard v-else-if="loadError">
       <p class="text-sm text-(--color-danger)" role="alert">
@@ -344,9 +344,10 @@ async function confirmDelete() {
         </div>
 
         <div v-if="expanded[domain.id]" class="border-t border-(--color-border) px-5 py-4">
-          <p v-if="fetchingInstructions[domain.id] && !instructions[domain.id]" class="text-sm text-(--color-content-muted)" role="status">
-            Loading DNS records…
-          </p>
+          <div v-if="fetchingInstructions[domain.id] && !instructions[domain.id]" class="space-y-3" role="status" aria-label="Loading DNS records">
+            <UiSkeleton height="0.8rem" width="70%" />
+            <UiSkeleton v-for="record in 2" :key="record" height="3.5rem" rounded="lg" />
+          </div>
           <template v-else-if="instructions[domain.id]">
             <p class="mb-3 text-sm text-(--color-content-muted)">
               Create these records with your DNS provider, then press Verify.

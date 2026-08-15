@@ -44,6 +44,14 @@ watch(open, (isOpen) => {
   }
 })
 
+// A conditionally rendered modal can mount with v-model already true. In that
+// case the watcher never sees a transition, so open it once the dialog ref is
+// available (the links table QR action follows this path).
+onMounted(() => {
+  const el = dialog.value
+  if (open.value && el && !el.open) el.showModal()
+})
+
 onBeforeUnmount(() => {
   if (closeTimer) clearTimeout(closeTimer)
 })

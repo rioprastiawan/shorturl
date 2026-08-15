@@ -51,6 +51,10 @@ const visibleOptions = computed(() => {
 const { floatingStyle } = useFloatingPanel(trigger, open, {
   width: 'anchor',
   estimatedHeight: 272,
+  // Prefer opening below and constrain the scrollable list when space is
+  // limited. Flipping based on the full estimate made short selects open
+  // above even though their actual content easily fit below.
+  flipThreshold: 120,
 })
 
 onClickOutside([root, list], () => close())
@@ -207,14 +211,13 @@ function onKeydown(event: KeyboardEvent) {
       <Icon name="lucide:chevron-down" size="16" class="shrink-0 text-(--color-content-subtle) transition-transform duration-200" :class="open ? 'rotate-180' : ''" />
     </button>
 
-    <Teleport to="body">
-      <Transition name="menu-down">
+    <Transition name="menu-down">
         <div
           v-if="open"
           ref="list"
           popover="manual"
           :style="floatingStyle"
-          class="m-0 overflow-hidden rounded-lg border border-(--color-border) bg-(--color-surface-raised) text-(--color-content) shadow-xl"
+          class="m-0 flex flex-col overflow-hidden rounded-lg border border-(--color-border) bg-(--color-surface-raised) text-(--color-content) shadow-xl"
         >
         <div v-if="searchable" class="border-b border-(--color-border) p-2">
           <div class="flex items-center gap-2 rounded-lg border border-(--color-border-strong) bg-(--color-surface-muted) px-2.5">
@@ -230,7 +233,7 @@ function onKeydown(event: KeyboardEvent) {
             >
           </div>
         </div>
-        <div :id="`${id}-listbox`" role="listbox" :aria-labelledby="label ? `${id}-label` : undefined" class="max-h-56 overflow-y-auto p-1.5">
+        <div :id="`${id}-listbox`" role="listbox" :aria-labelledby="label ? `${id}-label` : undefined" class="min-h-0 max-h-56 overflow-y-auto p-1.5">
         <button
           v-for="{ option, index } in visibleOptions"
           :id="`${id}-option-${index}`"
@@ -253,8 +256,7 @@ function onKeydown(event: KeyboardEvent) {
         </p>
         </div>
         </div>
-      </Transition>
-    </Teleport>
+    </Transition>
 
     <p v-if="error" :id="`${id}-error`" class="text-xs text-(--color-danger)" role="alert">{{ error }}</p>
     <p v-else-if="hint" :id="`${id}-hint`" class="text-xs text-(--color-content-muted)">{{ hint }}</p>

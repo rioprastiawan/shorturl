@@ -336,9 +336,9 @@ func main() {
 
       <!-- Keys -->
       <UiCard :padded="false">
-        <p v-if="loading" class="px-5 py-10 text-center text-sm text-(--color-content-muted)" role="status">
-          Loading keys…
-        </p>
+        <div v-if="loading" role="status" aria-label="Loading API keys">
+          <UiSkeletonTable :rows="5" :columns="4" />
+        </div>
 
         <div v-else-if="loadError" class="px-5 py-10 text-center">
           <p class="text-sm text-(--color-danger)" role="alert">

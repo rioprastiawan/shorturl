@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Domain, Link } from '~/types/api'
 import type { LinkFormErrors } from '~/components/links/form'
-import type { LinkAnalytics, PresetRange } from '~/components/analytics/types'
+import type { CustomRange, LinkAnalytics, PresetRange } from '~/components/analytics/types'
 import AnalyticsChart from '~/components/analytics/Chart.vue'
 import AnalyticsRangePicker from '~/components/analytics/RangePicker.vue'
 import LinkFormFields from '~/components/links/FormFields.vue'
@@ -184,13 +184,14 @@ function buildPatch(): Record<string, unknown> | null {
     }
   }
 
-  const maxClicks = next.max_clicks.trim()
-  if (maxClicks !== prev.max_clicks) {
+  const maxClicks = String(next.max_clicks ?? '').trim()
+  const previousMaxClicks = String(prev.max_clicks ?? '').trim()
+  if (maxClicks !== previousMaxClicks) {
     if (maxClicks === '') {
       patch.max_clicks = null
     } else {
       const parsed = Number(maxClicks)
-      if (!Number.isFinite(parsed) || parsed <= 0) {
+      if (!Number.isInteger(parsed) || parsed <= 0) {
         errors.value = { max_clicks: 'Enter a positive number, or leave it empty for no limit.' }
         return null
       }
@@ -256,6 +257,7 @@ async function toggleStatus() {
 // ------------------------------------------------------------- analytics
 
 const range = ref<PresetRange>('7d')
+const customRange = ref<CustomRange | null>(null)
 const stats = ref<LinkAnalytics | null>(null)
 const statsLoading = ref(true)
 const statsError = ref<string | null>(null)
@@ -269,7 +271,10 @@ async function loadStats() {
   try {
     // The service types this as ClicksReport, but the server returns the
     // per-link DTO: link, totals and a series, with no dimension breakdowns.
-    const res = await analytics.forLink(workspaceId, linkId.value, { range: range.value })
+    const res = await analytics.forLink(workspaceId, linkId.value, {
+      range: range.value,
+      ...(range.value === 'custom' && customRange.value ? customRange.value : {}),
+    })
     stats.value = res as unknown as LinkAnalytics
   } catch (error) {
     statsError.value = error instanceof ApiError ? error.message : 'Could not load analytics.'
@@ -280,6 +285,11 @@ async function loadStats() {
 }
 
 watch([linkId, range, () => ws.activeId.value], () => loadStats(), { immediate: true })
+
+function applyCustomRange(value: CustomRange) {
+  customRange.value = value
+  if (range.value === 'custom') loadStats()
+}
 
 const series = computed(() => stats.value?.series ?? [])
 const hasSeriesData = computed(() => series.value.some(p => p.clicks > 0))
@@ -313,9 +323,11 @@ async function confirmDelete() {
       &larr; Links
     </NuxtLink>
 
-    <p v-if="loading" class="text-sm text-(--color-content-muted)" role="status">
-      Loading link…
-    </p>
+    <div v-if="loading" class="flex flex-col gap-5" role="status" aria-label="Loading link details">
+      <div class="space-y-3"><UiSkeleton height="2rem" width="45%" /><UiSkeleton height="0.8rem" width="70%" /><UiSkeleton height="0.65rem" width="55%" /></div>
+      <div class="rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-5"><UiSkeleton width="6rem" /><UiSkeleton class="mt-5" height="16rem" rounded="lg" /></div>
+      <div class="rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-5"><UiSkeleton width="5rem" /><div class="mt-5 space-y-4"><UiSkeleton v-for="field in 4" :key="field" height="2.25rem" rounded="lg" /></div></div>
+    </div>
 
     <UiCard v-else-if="loadError || !link">
       <p class="text-sm text-(--color-danger)" role="alert">
@@ -367,12 +379,18 @@ async function confirmDelete() {
       <!-- Analytics -->
       <UiCard title="Clicks">
         <template #actions>
-          <AnalyticsRangePicker v-model="range" :disabled="statsLoading" />
+          <AnalyticsRangePicker
+            v-model="range"
+            :custom-range="customRange"
+            :disabled="statsLoading"
+            @custom="applyCustomRange"
+          />
         </template>
 
-        <p v-if="statsLoading" class="py-6 text-center text-sm text-(--color-content-muted)" role="status">
-          Loading analytics…
-        </p>
+        <div v-if="statsLoading" class="space-y-5 py-2" role="status" aria-label="Loading link analytics">
+          <div class="flex gap-8"><UiSkeleton height="2.5rem" width="8rem" /><UiSkeleton height="2.5rem" width="6rem" /></div>
+          <UiSkeleton height="16rem" rounded="lg" />
+        </div>
         <p v-else-if="statsError" class="py-6 text-center text-sm text-(--color-danger)" role="alert">
           {{ statsError }}
         </p>
@@ -442,13 +460,18 @@ async function confirmDelete() {
 
       <!-- Delete -->
       <UiCard title="Danger zone">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <p class="text-sm text-(--color-content-muted)">
+        <div class="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+          <h3 class="text-sm font-medium text-(--color-danger)">
+            Delete link
+          </h3>
+          <p class="mt-1 text-sm text-(--color-content-muted)">
             Deleting this link stops the short URL resolving immediately and removes its click history.
           </p>
-          <UiButton variant="danger" @click="deleteOpen = true">
-            Delete link
-          </UiButton>
+          <div class="mt-3">
+            <UiButton variant="danger" size="sm" @click="deleteOpen = true">
+              Delete link
+            </UiButton>
+          </div>
         </div>
       </UiCard>
 
@@ -472,7 +495,7 @@ async function confirmDelete() {
         </template>
       </UiModal>
 
-      <LinkQrModal
+      <LinksQrModal
         v-model="qrOpen"
         :url="link.short_url"
         :label="link.title || `${link.domain}/${link.slug}`"

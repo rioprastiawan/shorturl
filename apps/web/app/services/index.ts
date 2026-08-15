@@ -139,7 +139,7 @@ export function useServices() {
       api.get<ClicksReport>(`/workspaces/${workspaceId}/analytics/clicks`, query),
     // Returns LinkAnalytics, not ClicksReport — per-link responses carry
     // lifetime totals and a series, but no dimensional breakdowns.
-    forLink: (workspaceId: string, linkId: string, query?: { range?: AnalyticsRange }) =>
+    forLink: (workspaceId: string, linkId: string, query?: { range?: AnalyticsRange, from?: string, to?: string }) =>
       api.get<LinkAnalytics>(`/workspaces/${workspaceId}/links/${linkId}/analytics`, query),
   }
 
