@@ -9,7 +9,7 @@ const model = defineModel<PresetRange>({ required: true })
 
 <template>
   <div
-    class="inline-flex rounded-md border border-(--color-border-strong) p-0.5"
+    class="inline-flex flex-wrap rounded-md border border-(--color-border-strong) p-0.5"
     role="group"
     aria-label="Date range"
   >

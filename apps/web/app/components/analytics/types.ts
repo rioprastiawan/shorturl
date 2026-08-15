@@ -2,16 +2,18 @@ import type { SeriesPoint, TopLink, ValueStat } from '~/types/api'
 
 /** The four ranges the dashboard offers. `custom` exists server-side but has
  *  no UI yet, so it is deliberately not in this union. */
-export type PresetRange = '24h' | '7d' | '30d' | '90d'
+export type PresetRange = '24h' | '7d' | '30d' | '90d' | '1y' | '5y'
 
 export const RANGE_OPTIONS: { value: PresetRange, label: string }[] = [
   { value: '24h', label: '24h' },
   { value: '7d', label: '7 days' },
   { value: '30d', label: '30 days' },
   { value: '90d', label: '90 days' },
+  { value: '1y', label: '1 year' },
+  { value: '5y', label: '5 years' },
 ]
 
-export type Granularity = 'hour' | 'day' | 'week'
+export type Granularity = 'hour' | 'day' | 'week' | 'month'
 
 /**
  * The real shape of `GET /workspaces/{id}/links/{id}/analytics`.

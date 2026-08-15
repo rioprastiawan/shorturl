@@ -1,0 +1,148 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ShortURL Public API",
+    "version": "1.0.0",
+    "summary": "Create and manage short links from another application.",
+    "description": "The API key determines the workspace automatically. All success responses use a data envelope; all failures use a stable error envelope."
+  },
+  "servers": [{ "url": "/api/v1", "description": "This ShortURL installation" }],
+  "tags": [{ "name": "Links", "description": "Short-link lifecycle" }],
+  "security": [{ "apiKey": [] }],
+  "paths": {
+    "/links": {
+      "get": {
+        "tags": ["Links"], "summary": "List links", "operationId": "listLinks",
+        "description": "Requires the `links:read` scope. Results use cursor pagination.",
+        "parameters": [
+          { "$ref": "#/components/parameters/Search" }, { "$ref": "#/components/parameters/Status" },
+          { "$ref": "#/components/parameters/DomainId" }, { "$ref": "#/components/parameters/ExternalReferenceQuery" },
+          { "$ref": "#/components/parameters/CreatedAfter" }, { "$ref": "#/components/parameters/CreatedBefore" },
+          { "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Cursor" }
+        ],
+        "responses": {
+          "200": { "description": "A page of links", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LinkListResponse" }, "examples": { "page": { "$ref": "#/components/examples/LinkList" } } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" }, "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }, "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "post": {
+        "tags": ["Links"], "summary": "Create a link", "operationId": "createLink",
+        "description": "Requires `links:write`. Supplying an Idempotency-Key makes retries safe. A replay returns 200; a new link returns 201.",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateLinkRequest" }, "examples": { "complete": { "$ref": "#/components/examples/CreateLink" } } } } },
+        "responses": {
+          "200": { "$ref": "#/components/responses/LinkSuccess" }, "201": { "$ref": "#/components/responses/LinkCreated" },
+          "400": { "$ref": "#/components/responses/BadRequest" }, "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }, "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/ValidationError" }, "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/links/{linkId}": {
+      "parameters": [{ "$ref": "#/components/parameters/LinkId" }],
+      "get": {
+        "tags": ["Links"], "summary": "Get a link", "operationId": "getLink", "description": "Requires `links:read`.",
+        "responses": { "200": { "$ref": "#/components/responses/LinkSuccess" }, "400": { "$ref": "#/components/responses/BadRequest" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      },
+      "patch": {
+        "tags": ["Links"], "summary": "Update a link", "operationId": "updateLink",
+        "description": "Requires `links:write`. Omit a field to keep it unchanged. Send null for title, expires_at, max_clicks, password, or metadata to clear it.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateLinkRequest" }, "example": { "title": "Updated campaign", "expires_at": null, "status": "active" } } } },
+        "responses": { "200": { "$ref": "#/components/responses/LinkSuccess" }, "400": { "$ref": "#/components/responses/BadRequest" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "422": { "$ref": "#/components/responses/ValidationError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      },
+      "delete": {
+        "tags": ["Links"], "summary": "Disable or permanently delete a link", "operationId": "deleteLink",
+        "description": "Requires `links:write`. The default is a recoverable soft disable. Use hard=true only for permanent deletion.",
+        "parameters": [{ "name": "hard", "in": "query", "description": "Permanently delete the link when true.", "schema": { "type": "boolean", "default": false } }],
+        "responses": { "204": { "description": "The link was disabled or deleted; no response body." }, "400": { "$ref": "#/components/responses/BadRequest" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/links/by-reference/{externalReference}": {
+      "get": {
+        "tags": ["Links"], "summary": "Find a link by external reference", "operationId": "getLinkByExternalReference", "description": "Requires `links:read`.",
+        "parameters": [{ "name": "externalReference", "in": "path", "required": true, "description": "Identifier assigned by your own system.", "schema": { "type": "string" }, "example": "invoice-2026-0042" }],
+        "responses": { "200": { "$ref": "#/components/responses/LinkSuccess" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKey": { "type": "http", "scheme": "bearer", "bearerFormat": "ShortURL API key", "description": "Use a `shr_live_...` or `shr_test_...` key created in API integrations." }
+    },
+    "parameters": {
+      "LinkId": { "name": "linkId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "example": "018f3b77-5f51-7c25-a5df-77a3cc123456" },
+      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": false, "description": "Unique retry key, up to 255 characters. Records expire after the server's idempotency retention period.", "schema": { "type": "string", "maxLength": 255 }, "example": "invoice-2026-0042" },
+      "Search": { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Search slug, title, destination, or reference." },
+      "Status": { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "disabled"] } },
+      "DomainId": { "name": "domain_id", "in": "query", "schema": { "type": "string", "format": "uuid" } },
+      "ExternalReferenceQuery": { "name": "external_reference", "in": "query", "schema": { "type": "string" } },
+      "CreatedAfter": { "name": "created_after", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+      "CreatedBefore": { "name": "created_before", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 } },
+      "Cursor": { "name": "cursor", "in": "query", "schema": { "type": "string" }, "description": "Opaque next_cursor value from the previous response." }
+    },
+    "schemas": {
+      "Link": {
+        "type": "object", "required": ["id", "short_url", "slug", "domain", "domain_id", "destination_url", "title", "status", "redirect_type", "has_password", "expires_at", "max_clicks", "click_count", "external_reference", "created_via", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "short_url": { "type": "string", "format": "uri" },
+          "slug": { "type": "string" }, "domain": { "type": "string", "format": "hostname" }, "domain_id": { "type": "string", "format": "uuid" },
+          "destination_url": { "type": "string", "format": "uri" }, "title": { "type": ["string", "null"] },
+          "status": { "type": "string", "enum": ["active", "disabled"] }, "redirect_type": { "type": "integer", "enum": [301, 302, 307, 308] },
+          "has_password": { "type": "boolean" }, "expires_at": { "type": ["string", "null"], "format": "date-time" },
+          "max_clicks": { "type": ["integer", "null"], "format": "int64" }, "click_count": { "type": "integer", "format": "int64" },
+          "external_reference": { "type": ["string", "null"] }, "metadata": { "type": ["object", "null"], "additionalProperties": true },
+          "created_via": { "type": "string", "enum": ["api", "dashboard"] }, "created_at": { "type": "string", "format": "date-time" }, "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateLinkRequest": {
+        "type": "object", "required": ["destination_url"], "additionalProperties": false,
+        "properties": {
+          "destination_url": { "type": "string", "format": "uri" }, "domain": { "type": "string", "format": "hostname", "description": "Cannot be combined with domain_id." },
+          "domain_id": { "type": "string", "format": "uuid", "description": "Cannot be combined with domain." }, "slug": { "type": "string" }, "title": { "type": "string" },
+          "redirect_type": { "type": "integer", "enum": [301, 302, 307, 308], "default": 302 }, "password": { "type": "string", "writeOnly": true },
+          "expires_at": { "type": "string", "format": "date-time" }, "max_clicks": { "type": "integer", "format": "int64", "minimum": 1 },
+          "external_reference": { "type": "string" }, "metadata": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "UpdateLinkRequest": {
+        "type": "object", "minProperties": 1, "additionalProperties": false,
+        "properties": {
+          "destination_url": { "type": "string", "format": "uri" }, "status": { "type": "string", "enum": ["active", "disabled"] },
+          "redirect_type": { "type": "integer", "enum": [301, 302, 307, 308] }, "slug": { "type": "string" },
+          "domain": { "type": "string", "format": "hostname" }, "domain_id": { "type": "string", "format": "uuid" },
+          "title": { "type": ["string", "null"] }, "expires_at": { "type": ["string", "null"], "format": "date-time" },
+          "max_clicks": { "type": ["integer", "null"], "format": "int64", "minimum": 1 }, "password": { "type": ["string", "null"], "writeOnly": true },
+          "metadata": { "type": ["object", "null"], "additionalProperties": true }
+        }
+      },
+      "LinkResponse": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/Link" } } },
+      "LinkListResponse": { "type": "object", "required": ["data", "meta"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Link" } }, "meta": { "type": "object", "required": ["next_cursor"], "properties": { "next_cursor": { "type": ["string", "null"] } } } } },
+      "Error": { "type": "object", "required": ["error"], "properties": { "error": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" }, "fields": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } }, "request_id": { "type": "string" } } } } }
+    },
+    "examples": {
+      "Link": { "value": { "id": "018f3b77-5f51-7c25-a5df-77a3cc123456", "short_url": "https://go.example.com/spring-sale", "slug": "spring-sale", "domain": "go.example.com", "domain_id": "018f3b6f-a805-7e21-953b-123456789abc", "destination_url": "https://example.com/campaigns/spring", "title": "Spring campaign", "status": "active", "redirect_type": 302, "has_password": false, "expires_at": "2026-12-31T16:59:59Z", "max_clicks": 10000, "click_count": 42, "external_reference": "campaign-2026-spring", "metadata": { "channel": "newsletter" }, "created_via": "api", "created_at": "2026-08-15T03:20:00Z", "updated_at": "2026-08-15T03:20:00Z" } },
+      "LinkList": { "value": { "data": [{ "id": "018f3b77-5f51-7c25-a5df-77a3cc123456", "short_url": "https://go.example.com/spring-sale", "slug": "spring-sale", "domain": "go.example.com", "domain_id": "018f3b6f-a805-7e21-953b-123456789abc", "destination_url": "https://example.com/campaigns/spring", "title": "Spring campaign", "status": "active", "redirect_type": 302, "has_password": false, "expires_at": null, "max_clicks": null, "click_count": 42, "external_reference": "campaign-2026-spring", "metadata": { "channel": "newsletter" }, "created_via": "api", "created_at": "2026-08-15T03:20:00Z", "updated_at": "2026-08-15T03:20:00Z" }], "meta": { "next_cursor": "eyJjcmVhdGVkX2F0IjoiMjAyNi0wOC0xNVQwMzoyMDowMFoiLCJpZCI6Ii4uLiJ9" } } },
+      "CreateLink": { "value": { "destination_url": "https://example.com/campaigns/spring", "slug": "spring-sale", "title": "Spring campaign", "redirect_type": 302, "expires_at": "2026-12-31T16:59:59Z", "max_clicks": 10000, "external_reference": "campaign-2026-spring", "metadata": { "channel": "newsletter" } } },
+      "LinkResponse": { "value": { "data": { "id": "018f3b77-5f51-7c25-a5df-77a3cc123456", "short_url": "https://go.example.com/spring-sale", "slug": "spring-sale", "domain": "go.example.com", "domain_id": "018f3b6f-a805-7e21-953b-123456789abc", "destination_url": "https://example.com/campaigns/spring", "title": "Spring campaign", "status": "active", "redirect_type": 302, "has_password": false, "expires_at": "2026-12-31T16:59:59Z", "max_clicks": 10000, "click_count": 42, "external_reference": "campaign-2026-spring", "metadata": { "channel": "newsletter" }, "created_via": "api", "created_at": "2026-08-15T03:20:00Z", "updated_at": "2026-08-15T03:20:00Z" } } },
+      "Unauthorized": { "value": { "error": { "code": "unauthorized", "message": "Authentication required", "request_id": "req_01J5D5XQ2AT8" } } },
+      "Forbidden": { "value": { "error": { "code": "forbidden", "message": "API key is missing the links:write scope", "request_id": "req_01J5D5XQ2AT8" } } },
+      "Validation": { "value": { "error": { "code": "validation_error", "message": "The request is invalid", "fields": { "destination_url": ["must be a valid absolute URL"] }, "request_id": "req_01J5D5XQ2AT8" } } },
+      "Conflict": { "value": { "error": { "code": "idempotency_conflict", "message": "The idempotency key was already used with a different request", "request_id": "req_01J5D5XQ2AT8" } } },
+      "RateLimited": { "value": { "error": { "code": "rate_limited", "message": "Too many requests", "request_id": "req_01J5D5XQ2AT8" } } }
+    },
+    "responses": {
+      "LinkSuccess": { "description": "Link details", "headers": { "X-RateLimit-Limit": { "schema": { "type": "integer" }, "description": "Requests allowed per minute for this key." } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LinkResponse" }, "examples": { "success": { "$ref": "#/components/examples/LinkResponse" } } } } },
+      "LinkCreated": { "description": "A new link was created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LinkResponse" }, "examples": { "success": { "$ref": "#/components/examples/LinkResponse" } } } } },
+      "BadRequest": { "description": "Malformed JSON, UUID, timestamp, query, or idempotency key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" }, "example": { "error": { "code": "bad_request", "message": "created_after must be an RFC3339 timestamp", "request_id": "req_01J5D5XQ2AT8" } } } } },
+      "Unauthorized": { "description": "The API key is absent, invalid, revoked, or expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" }, "examples": { "unauthorized": { "$ref": "#/components/examples/Unauthorized" } } } } },
+      "Forbidden": { "description": "The API key does not have the required scope", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" }, "examples": { "missingScope": { "$ref": "#/components/examples/Forbidden" } } } } },
+      "NotFound": { "description": "No link in the API key's workspace matched", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" }, "example": { "error": { "code": "not_found", "message": "Resource not found", "request_id": "req_01J5D5XQ2AT8" } } } } },
+      "Conflict": { "description": "Slug, external reference, or idempotency conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" }, "examples": { "idempotency": { "$ref": "#/components/examples/Conflict" } } } } },
+      "ValidationError": { "description": "One or more fields failed validation", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" }, "examples": { "invalidField": { "$ref": "#/components/examples/Validation" } } } } },
+      "RateLimited": { "description": "Per-key request limit exceeded", "headers": { "Retry-After": { "schema": { "type": "integer", "example": 60 }, "description": "Seconds before retrying." }, "X-RateLimit-Limit": { "schema": { "type": "integer" } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" }, "examples": { "limited": { "$ref": "#/components/examples/RateLimited" } } } }
+    }
+  }
+}
+}

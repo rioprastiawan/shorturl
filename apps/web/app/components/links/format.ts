@@ -6,14 +6,13 @@
  * the right default for a self-hosted tool that stores no locale preference.
  */
 
-const dateTimeFmt = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-})
-
-const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
-
-const numberFmt = new Intl.NumberFormat(undefined)
+function preferences() {
+  if (!import.meta.client) return { locale: 'en', timeZone: 'UTC' }
+  return {
+    locale: localStorage.getItem('shorturl-language') === 'id' ? 'id-ID' : 'en-US',
+    timeZone: localStorage.getItem('shorturl-timezone') || 'UTC',
+  }
+}
 
 function parse(iso: string | null | undefined): Date | null {
   if (!iso) return null
@@ -24,19 +23,23 @@ function parse(iso: string | null | undefined): Date | null {
 /** "15 Aug 2026, 13:20" — when the time of day matters. */
 export function formatDateTime(iso: string | null | undefined): string {
   const d = parse(iso)
-  return d ? dateTimeFmt.format(d) : '—'
+  if (!d) return '—'
+  const { locale, timeZone } = preferences()
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(d)
 }
 
 /** "15 Aug 2026" — when the time is noise. */
 export function formatDate(iso: string | null | undefined): string {
   const d = parse(iso)
-  return d ? dateFmt.format(d) : '—'
+  if (!d) return '—'
+  const { locale, timeZone } = preferences()
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone }).format(d)
 }
 
 /** Thousands separators, so 12000 clicks does not read as 1200. */
 export function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined) return '—'
-  return numberFmt.format(value)
+  return new Intl.NumberFormat(preferences().locale).format(value)
 }
 
 /**

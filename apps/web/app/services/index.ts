@@ -11,6 +11,7 @@ import type {
   Overview,
   Role,
   SetupStatus,
+  TwoFactorSetup,
   User,
   Workspace,
   WorkspaceInvitation,
@@ -28,10 +29,20 @@ export function useServices() {
   const auth = {
     register: (body: { name: string, email: string, password: string, invitation_token?: string }) =>
       api.post<User>('/auth/register', body),
-    login: (body: { email: string, password: string }) =>
+    login: (body: { email: string, password: string, code?: string }) =>
       api.post<User>('/auth/login', body),
     logout: () => api.post<void>('/auth/logout'),
     me: () => api.get<User>('/auth/me'),
+    updateProfile: (body: { name: string, email: string }) =>
+      api.patch<User>('/auth/me', body),
+    updatePreferences: (body: { language: 'en' | 'id', timezone: string }) =>
+      api.patch<User>('/auth/preferences', body),
+    changePassword: (body: { current_password: string, new_password: string }) =>
+      api.put<void>('/auth/password', body),
+    twoFactorStatus: () => api.get<{ enabled: boolean }>('/auth/2fa'),
+    twoFactorSetup: (body: { password: string }) => api.post<TwoFactorSetup>('/auth/2fa/setup', body),
+    twoFactorEnable: (body: { code: string }) => api.post<void>('/auth/2fa/enable', body),
+    twoFactorDisable: (body: { password: string, code: string }) => api.deleteWithBody('/auth/2fa', body),
   }
 
   const setup = {
@@ -48,6 +59,8 @@ export function useServices() {
   const workspaces = {
     list: () => api.list<Workspace>('/workspaces'),
     create: (body: { name: string }) => api.post<Workspace>('/workspaces', body),
+    createDemo: (body: { size: 'starter' | 'busy' | 'five_year' }) =>
+      api.post<Workspace>('/workspaces/demo', body),
     get: (id: string) => api.get<Workspace>(`/workspaces/${id}`),
     update: (id: string, body: { name: string }) =>
       api.patch<Workspace>(`/workspaces/${id}`, body),
@@ -131,7 +144,8 @@ export function useServices() {
   }
 
   const apiKeys = {
-    list: (workspaceId: string) => api.list<ApiKey>(`/workspaces/${workspaceId}/api-keys`),
+    list: (workspaceId: string, query?: { cursor?: string, limit?: number }) =>
+      api.list<ApiKey>(`/workspaces/${workspaceId}/api-keys`, query),
     create: (workspaceId: string, body: { name: string, scopes?: string[], expires_at?: string, test?: boolean }) =>
       api.post<CreatedApiKey>(`/workspaces/${workspaceId}/api-keys`, body),
     revoke: (workspaceId: string, id: string) =>

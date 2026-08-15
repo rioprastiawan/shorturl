@@ -7,21 +7,21 @@
  * the right default for a self-hosted tool with no locale preference stored.
  */
 
-const dateTime = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-})
-
-const dateOnly = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
-
-const number = new Intl.NumberFormat(undefined)
+function preferences() {
+  if (!import.meta.client) return { locale: 'en', timeZone: 'UTC' }
+  return {
+    locale: localStorage.getItem('shorturl-language') === 'id' ? 'id-ID' : 'en-US',
+    timeZone: localStorage.getItem('shorturl-timezone') || 'UTC',
+  }
+}
 
 /** "15 Aug 2026, 13:20" — for timestamps where the time matters. */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const parsed = new Date(iso)
   if (Number.isNaN(parsed.getTime())) return '—'
-  return dateTime.format(parsed)
+  const { locale, timeZone } = preferences()
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(parsed)
 }
 
 /** "15 Aug 2026" — for joined dates, where the time is noise. */
@@ -29,13 +29,14 @@ export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   const parsed = new Date(iso)
   if (Number.isNaN(parsed.getTime())) return '—'
-  return dateOnly.format(parsed)
+  const { locale, timeZone } = preferences()
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone }).format(parsed)
 }
 
 /** Thousands separators, so 12000 clicks does not read as 1200. */
 export function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined) return '—'
-  return number.format(value)
+  return new Intl.NumberFormat(preferences().locale).format(value)
 }
 
 /**

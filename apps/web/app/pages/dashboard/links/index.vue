@@ -14,10 +14,12 @@ useHead({ title: 'Links · ShortURL' })
 const ws = useWorkspaces()
 const toast = useToast()
 const { links, domains } = useServices()
+const createLinkModal = useCreateLinkModal()
 
 // ---------------------------------------------------------------- filters
 
 const search = ref('')
+const searchInput = ref<HTMLInputElement | null>(null)
 const debouncedSearch = ref('')
 const status = ref('')
 const domainId = ref('')
@@ -35,7 +37,9 @@ watch(search, (value) => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => (debouncedSearch.value = value.trim()), 300)
 })
-onBeforeUnmount(() => clearTimeout(searchTimer))
+onBeforeUnmount(() => {
+  clearTimeout(searchTimer)
+})
 
 const filtersActive = computed(() =>
   Boolean(debouncedSearch.value || status.value || domainId.value))
@@ -61,6 +65,10 @@ const pending = ref(true)
 const loadingMore = ref(false)
 const loadError = ref<string | null>(null)
 const domainOptions = ref<Domain[]>([])
+const domainFilterOptions = computed(() => [
+  { value: '', label: 'All domains' },
+  ...domainOptions.value.map(domain => ({ value: domain.id, label: domain.hostname })),
+])
 
 // A stale response from a filter the user has already changed must not
 // overwrite the current one, so every load carries a token.
@@ -141,6 +149,13 @@ async function copyShortUrl(link: Link) {
 const deleteTarget = ref<Link | null>(null)
 const deleteOpen = ref(false)
 const deleting = ref(false)
+const qrTarget = ref<Link | null>(null)
+const qrOpen = ref(false)
+
+function showQr(link: Link) {
+  qrTarget.value = link
+  qrOpen.value = true
+}
 
 function askDelete(link: Link) {
   deleteTarget.value = link
@@ -168,65 +183,92 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="flex flex-col gap-7">
     <header class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl font-semibold tracking-tight">
-          Links
+        <p class="mb-1 text-sm font-semibold text-(--color-accent)">Workspace</p>
+        <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
+          Your links
         </h1>
         <p class="mt-0.5 text-sm text-(--color-content-muted)">
-          Every short link in this workspace.
+          Create, organize, and track every short link in one place.
         </p>
       </div>
-      <UiButton to="/dashboard/links/new">
-        New link
+      <UiButton @click="createLinkModal.show()">
+        <Icon name="lucide:plus" size="17" /> Create short link
       </UiButton>
     </header>
 
-    <!-- Filters -->
-    <div class="flex flex-wrap items-end gap-3">
-      <div class="min-w-[14rem] flex-1">
-        <UiInput
+    <!-- Search and filters are one control surface: search is the primary
+         action, while status/domain stay available without competing with it. -->
+    <section class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-raised) shadow-[0_1px_3px_rgba(16,48,63,0.04)]" aria-label="Link filters">
+      <div class="flex items-center gap-3 px-4 py-3.5 sm:px-5">
+        <Icon name="lucide:search" size="19" class="shrink-0 text-(--color-content-subtle)" />
+        <input
+          ref="searchInput"
+          data-shortcut-search="links"
           v-model="search"
-          label="Search"
           type="search"
-          placeholder="Slug, title or destination"
-        />
+          aria-label="Search links"
+          placeholder="Search title, short link, or destination"
+          class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-(--color-content-subtle) sm:text-base"
+        >
+        <span
+          v-if="!pending && items.length"
+          class="hidden shrink-0 rounded-full bg-(--color-surface-muted) px-2.5 py-1 text-xs font-medium tabular-nums text-(--color-content-muted) sm:inline"
+        >
+          {{ formatNumber(items.length) }} shown
+        </span>
+        <kbd class="hidden rounded-md border border-(--color-border) bg-(--color-surface-muted) px-2 py-1 font-sans text-[10px] text-(--color-content-subtle) lg:inline">/</kbd>
       </div>
 
-      <div class="flex flex-col gap-1.5">
-        <label for="filter-status" class="text-sm font-medium">Status</label>
-        <select
-          id="filter-status"
-          v-model="status"
-          class="rounded-md border border-(--color-border-strong) bg-transparent px-3 py-2 text-sm"
-        >
-          <option v-for="option in STATUS_OPTIONS" :key="option.value" :value="option.value">
+      <div class="flex flex-col gap-3 border-t border-(--color-border) bg-(--color-surface-muted)/45 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+        <div class="flex min-w-0 items-center gap-1 overflow-x-auto" role="group" aria-label="Filter by status">
+          <button
+            v-for="option in STATUS_OPTIONS"
+            :key="option.value"
+            type="button"
+            class="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
+            :class="status === option.value
+              ? 'bg-(--color-surface-raised) text-(--color-content) shadow-sm ring-1 ring-(--color-border)'
+              : 'text-(--color-content-muted) hover:bg-(--color-surface-raised)/70 hover:text-(--color-content)'"
+            :aria-pressed="status === option.value"
+            @click="status = option.value"
+          >
+            <span
+              v-if="option.value"
+              class="mr-1.5 inline-block size-1.5 rounded-full"
+              :class="option.value === 'active'
+                ? 'bg-(--color-success)'
+                : option.value === 'disabled'
+                  ? 'bg-(--color-warning)'
+                  : 'bg-(--color-content-subtle)'"
+            />
             {{ option.label }}
-          </option>
-        </select>
-      </div>
+          </button>
+        </div>
 
-      <div class="flex flex-col gap-1.5">
-        <label for="filter-domain" class="text-sm font-medium">Domain</label>
-        <select
-          id="filter-domain"
-          v-model="domainId"
-          class="rounded-md border border-(--color-border-strong) bg-transparent px-3 py-2 text-sm"
-        >
-          <option value="">
-            All domains
-          </option>
-          <option v-for="domain in domainOptions" :key="domain.id" :value="domain.id">
-            {{ domain.hostname }}
-          </option>
-        </select>
+        <div class="flex items-center gap-2 border-t border-(--color-border) pt-2.5 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
+          <Icon name="lucide:globe-2" size="15" class="shrink-0 text-(--color-content-subtle)" />
+          <UiSelect
+            v-model="domainId"
+            input-id="filter-domain"
+            :options="domainFilterOptions"
+            size="sm"
+            class="min-w-40 flex-1 sm:w-52 sm:flex-none"
+          />
+          <button
+            v-if="filtersActive"
+            type="button"
+            class="inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-(--color-content-muted) transition-colors hover:bg-(--color-surface-raised) hover:text-(--color-danger)"
+            @click="clearFilters"
+          >
+            <Icon name="lucide:rotate-ccw" size="13" />
+            Reset
+          </button>
+        </div>
       </div>
-
-      <UiButton v-if="filtersActive" variant="ghost" @click="clearFilters">
-        Clear
-      </UiButton>
-    </div>
+    </section>
 
     <UiCard :padded="false">
       <p v-if="pending" class="px-5 py-10 text-center text-sm text-(--color-content-muted)" role="status">
@@ -257,7 +299,7 @@ async function confirmDelete() {
         title="No links yet"
         description="Short links you create appear here with their click counts."
       >
-        <UiButton to="/dashboard/links/new">
+        <UiButton @click="createLinkModal.show()">
           Create your first link
         </UiButton>
       </UiEmptyState>
@@ -343,6 +385,7 @@ async function confirmDelete() {
                 <LinkRowActions
                   :link-id="link.id"
                   @copy="copyShortUrl(link)"
+                  @qr="showQr(link)"
                   @delete="askDelete(link)"
                 />
               </td>
@@ -377,5 +420,12 @@ async function confirmDelete() {
         </UiButton>
       </template>
     </UiModal>
+
+    <LinkQrModal
+      v-if="qrTarget"
+      v-model="qrOpen"
+      :url="qrTarget.short_url"
+      :label="qrTarget.title || `${qrTarget.domain}/${qrTarget.slug}`"
+    />
   </div>
 </template>

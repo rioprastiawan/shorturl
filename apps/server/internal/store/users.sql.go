@@ -25,7 +25,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (name, email, password_hash, is_admin)
 VALUES ($1, $2, $3, $4)
-RETURNING id, name, email, password_hash, is_admin, created_at, updated_at
+RETURNING id, name, email, password_hash, is_admin, created_at, updated_at, language, timezone
 `
 
 type CreateUserParams struct {
@@ -51,12 +51,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.IsAdmin,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Language,
+		&i.Timezone,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, name, email, password_hash, is_admin, created_at, updated_at FROM users WHERE LOWER(email) = LOWER($1::text)
+SELECT id, name, email, password_hash, is_admin, created_at, updated_at, language, timezone FROM users WHERE LOWER(email) = LOWER($1::text)
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -70,12 +72,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.IsAdmin,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Language,
+		&i.Timezone,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, name, email, password_hash, is_admin, created_at, updated_at FROM users WHERE id = $1
+SELECT id, name, email, password_hash, is_admin, created_at, updated_at, language, timezone FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -89,12 +93,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.IsAdmin,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Language,
+		&i.Timezone,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, name, email, password_hash, is_admin, created_at, updated_at FROM users ORDER BY created_at ASC
+SELECT id, name, email, password_hash, is_admin, created_at, updated_at, language, timezone FROM users ORDER BY created_at ASC
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -114,6 +120,8 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.IsAdmin,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Language,
+			&i.Timezone,
 		); err != nil {
 			return nil, err
 		}
@@ -143,7 +151,7 @@ const updateUserProfile = `-- name: UpdateUserProfile :one
 UPDATE users
 SET name = $2, email = $3
 WHERE id = $1
-RETURNING id, name, email, password_hash, is_admin, created_at, updated_at
+RETURNING id, name, email, password_hash, is_admin, created_at, updated_at, language, timezone
 `
 
 type UpdateUserProfileParams struct {
@@ -163,6 +171,38 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.IsAdmin,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Language,
+		&i.Timezone,
+	)
+	return i, err
+}
+
+const updateUserPreferences = `-- name: UpdateUserPreferences :one
+UPDATE users
+SET language = $2, timezone = $3
+WHERE id = $1
+RETURNING id, name, email, password_hash, is_admin, created_at, updated_at, language, timezone
+`
+
+type UpdateUserPreferencesParams struct {
+	ID       uuid.UUID
+	Language string
+	Timezone string
+}
+
+func (q *Queries) UpdateUserPreferences(ctx context.Context, arg UpdateUserPreferencesParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserPreferences, arg.ID, arg.Language, arg.Timezone)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.PasswordHash,
+		&i.IsAdmin,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Language,
+		&i.Timezone,
 	)
 	return i, err
 }

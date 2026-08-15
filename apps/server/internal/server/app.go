@@ -81,7 +81,7 @@ func NewApp(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, 
 		Domain:    domain.NewService(q, pool, cfg),
 		Link:      link.NewService(pool, q, linkCache, cfg, logger),
 		Analytics: analytics.NewService(q, cfg),
-		APIKey:    apikey.NewService(q, logger),
+		APIKey:    apikey.NewService(pool, q, logger),
 
 		Producer: analytics.NewProducer(redis, cfg, logger),
 	}

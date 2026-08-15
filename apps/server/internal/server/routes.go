@@ -138,22 +138,27 @@ func (s *Server) mountAPI(r chi.Router) {
 // worth a strict limit: everything else under /auth and /setup is a read that
 // the dashboard performs routinely.
 var credentialPaths = map[string]bool{
-	"/api/v1/auth/login":    true,
-	"/api/v1/auth/register": true,
-	"/api/v1/setup":         true,
+	"/api/v1/auth/login":      true,
+	"/api/v1/auth/register":   true,
+	"/api/v1/auth/password":   true,
+	"/api/v1/auth/2fa/setup":  true,
+	"/api/v1/auth/2fa/enable": true,
+	"/api/v1/auth/2fa":        true,
+	"/api/v1/setup":           true,
 }
 
 // rateLimitCredentials applies the limiter only to credential submissions.
 //
 // Scoping by path rather than by route group keeps the limit meaningful: a
 // budget spent on session checks protects nothing, and exhausting it logs
-// legitimate users out. Only POST counts, so a stray GET cannot consume it.
+// legitimate users out. Read-only requests never consume the budget.
 func rateLimitCredentials(rl *middleware.RateLimiter) func(http.Handler) http.Handler {
 	limited := middleware.RateLimit(rl, middleware.ByIP)
 	return func(next http.Handler) http.Handler {
 		guarded := limited(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodPost && credentialPaths[r.URL.Path] {
+			mutates := r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete
+			if mutates && credentialPaths[r.URL.Path] {
 				guarded.ServeHTTP(w, r)
 				return
 			}

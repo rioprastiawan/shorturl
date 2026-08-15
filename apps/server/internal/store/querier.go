@@ -88,6 +88,7 @@ type Querier interface {
 	UpdateDomainVerification(ctx context.Context, arg UpdateDomainVerificationParams) (Domain, error)
 	UpdateLink(ctx context.Context, arg UpdateLinkParams) (Link, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
+	UpdateUserPreferences(ctx context.Context, arg UpdateUserPreferencesParams) (User, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
 	UpdateWorkspaceMemberRole(ctx context.Context, arg UpdateWorkspaceMemberRoleParams) (WorkspaceMember, error)

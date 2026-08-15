@@ -7,14 +7,18 @@ import type { Ref } from 'vue'
  * component cannot leave a dropdown stuck open.
  */
 export function onClickOutside(
-  target: Ref<HTMLElement | null>,
+  target: Ref<HTMLElement | null> | Array<Ref<HTMLElement | null>>,
   handler: (event: MouseEvent) => void,
 ) {
   if (!import.meta.client) return
 
   function listener(event: MouseEvent) {
-    const el = target.value
-    if (!el || el === event.target || event.composedPath().includes(el)) return
+    const targets = Array.isArray(target) ? target : [target]
+    const path = event.composedPath()
+    if (targets.some((item) => {
+      const el = item.value
+      return el && (el === event.target || path.includes(el))
+    })) return
     handler(event)
   }
 

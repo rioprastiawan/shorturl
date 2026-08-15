@@ -34,7 +34,7 @@ async function submit() {
 <template>
   <div class="flex flex-col gap-6">
     <header class="flex flex-col gap-1">
-      <h1 class="text-xl font-semibold tracking-tight">Create your first workspace</h1>
+      <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">Create your first workspace</h1>
       <p class="text-sm text-(--color-content-muted)">
         A workspace keeps your links, domains, members, and API keys together.
       </p>
@@ -50,5 +50,12 @@ async function submit() {
       />
       <UiButton type="submit" :loading="pending">Create workspace</UiButton>
     </form>
+
+    <div class="flex items-center gap-3 text-xs uppercase tracking-wide text-(--color-content-subtle)">
+      <span class="h-px flex-1 bg-(--color-border)" />
+      or explore first
+      <span class="h-px flex-1 bg-(--color-border)" />
+    </div>
+    <WorkspaceDemoCreator block />
   </div>
 </template>

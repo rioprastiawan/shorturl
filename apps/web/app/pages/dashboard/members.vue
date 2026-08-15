@@ -43,6 +43,10 @@ function isSelf(member: Member): boolean {
 
 const inviteEmail = ref('')
 const inviteRole = ref<Exclude<Role, 'owner'>>('member')
+const roleOptions = [
+  { value: 'member', label: 'Member' },
+  { value: 'admin', label: 'Admin' },
+]
 const inviting = ref(false)
 const inviteEmailError = ref<string | undefined>()
 const inviteError = ref<string | null>(null)
@@ -172,11 +176,6 @@ async function changeRole(member: Member, next: Role) {
   }
 }
 
-function onRoleSelect(member: Member, event: Event) {
-  const value = (event.target as HTMLSelectElement).value as Role
-  changeRole(member, value)
-}
-
 /* ---------------------------------------------------------------- remove */
 
 const removeTarget = ref<Member | null>(null)
@@ -235,11 +234,12 @@ async function confirmRemove() {
 <template>
   <div class="flex flex-col gap-6">
     <header>
-      <h1 class="text-xl font-semibold tracking-tight">
-        Members
+      <p class="mb-1 text-sm font-semibold text-(--color-accent)">Manage</p>
+      <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
+        Team members
       </h1>
       <p class="text-sm text-(--color-content-muted)">
-        Who can see and change things in {{ ws.active.value?.name ?? 'this workspace' }}.
+        Invite people and decide what they can manage in {{ ws.active.value?.name ?? 'this workspace' }}.
       </p>
     </header>
 
@@ -272,20 +272,8 @@ async function confirmRemove() {
             />
           </div>
 
-          <div class="flex flex-col gap-1.5 sm:w-40">
-            <label for="invite-role" class="text-sm font-medium">Role</label>
-            <select
-              id="invite-role"
-              v-model="inviteRole"
-              class="rounded-md border border-(--color-border-strong) bg-transparent px-3 py-2 text-sm"
-            >
-              <option value="member">
-                Member
-              </option>
-              <option value="admin">
-                Admin
-              </option>
-            </select>
+          <div class="sm:w-40">
+            <UiSelect v-model="inviteRole" input-id="invite-role" label="Role" :options="roleOptions" />
           </div>
 
           <div class="sm:pt-7">
@@ -401,21 +389,16 @@ async function confirmRemove() {
             <label v-if="canManage" class="sr-only" :for="`role-${member.user_id}`">
               Role for {{ member.name }}
             </label>
-            <select
+            <UiSelect
               v-if="canManage"
-              :id="`role-${member.user_id}`"
-              :value="member.role"
+              :input-id="`role-${member.user_id}`"
+              :model-value="member.role"
+              :options="roleOptions"
+              size="sm"
               :disabled="savingRoleFor === member.user_id"
-              class="rounded-md border border-(--color-border-strong) bg-transparent px-2 py-1 text-sm disabled:opacity-50"
-              @change="onRoleSelect(member, $event)"
-            >
-              <option value="member">
-                Member
-              </option>
-              <option value="admin">
-                Admin
-              </option>
-            </select>
+              class="w-32"
+              @update:model-value="value => changeRole(member, value as Role)"
+            />
             <UiBadge v-else :tone="roleTone(member.role)" class="capitalize">
               {{ member.role }}
             </UiBadge>

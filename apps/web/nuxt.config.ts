@@ -16,6 +16,34 @@ export default defineNuxtConfig({
 
   devtools: { enabled: true },
 
+  modules: ['@nuxt/icon', '@nuxtjs/color-mode'],
+
+  colorMode: {
+    preference: 'system',
+    fallback: 'light',
+    classSuffix: '',
+    storage: 'localStorage',
+    storageKey: 'shorturl-color-mode',
+  },
+
+  // The dashboard is shipped as a static SPA, so bundle the small Lucide set
+  // locally instead of fetching icons from Iconify at runtime.
+  icon: {
+    provider: 'none',
+    serverBundle: false,
+    clientBundle: {
+      scan: true,
+      icons: [
+        'lucide:layout-dashboard', 'lucide:link-2', 'lucide:chart-no-axes-combined',
+        'lucide:globe-2', 'lucide:users', 'lucide:key-round', 'lucide:settings',
+        'lucide:plus', 'lucide:menu', 'lucide:x', 'lucide:log-out',
+        'lucide:chevron-up', 'lucide:shield-check',
+        'lucide:check', 'lucide:arrow-right',
+        'lucide:sun', 'lucide:moon', 'lucide:monitor',
+      ],
+    },
+  },
+
   css: ['~/assets/css/main.css'],
 
   // Nuxt scans app/composables and app/utils by default. The API service
@@ -43,6 +71,7 @@ export default defineNuxtConfig({
   },
 
   app: {
+    pageTransition: { name: 'page', mode: 'out-in' },
     head: {
       title: 'ShortURL',
       htmlAttrs: { lang: 'en' },

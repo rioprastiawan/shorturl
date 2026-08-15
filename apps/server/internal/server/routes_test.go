@@ -21,13 +21,18 @@ func TestRateLimitCredentials(t *testing.T) {
 		path    string
 		limited bool
 	}{
-		"login is limited":           {http.MethodPost, "/api/v1/auth/login", true},
-		"register is limited":        {http.MethodPost, "/api/v1/auth/register", true},
-		"setup is limited":           {http.MethodPost, "/api/v1/setup", true},
-		"session check is not":       {http.MethodGet, "/api/v1/auth/me", false},
-		"setup status is not":        {http.MethodGet, "/api/v1/setup/status", false},
-		"logout is not":              {http.MethodPost, "/api/v1/auth/logout", false},
-		"GET on a login path is not": {http.MethodGet, "/api/v1/auth/login", false},
+		"login is limited":            {http.MethodPost, "/api/v1/auth/login", true},
+		"register is limited":         {http.MethodPost, "/api/v1/auth/register", true},
+		"password change is limited":  {http.MethodPut, "/api/v1/auth/password", true},
+		"setup is limited":            {http.MethodPost, "/api/v1/setup", true},
+		"2FA setup is limited":        {http.MethodPost, "/api/v1/auth/2fa/setup", true},
+		"2FA verification is limited": {http.MethodPost, "/api/v1/auth/2fa/enable", true},
+		"2FA disable is limited":      {http.MethodDelete, "/api/v1/auth/2fa", true},
+		"2FA status is not limited":   {http.MethodGet, "/api/v1/auth/2fa", false},
+		"session check is not":        {http.MethodGet, "/api/v1/auth/me", false},
+		"setup status is not":         {http.MethodGet, "/api/v1/setup/status", false},
+		"logout is not":               {http.MethodPost, "/api/v1/auth/logout", false},
+		"GET on a login path is not":  {http.MethodGet, "/api/v1/auth/login", false},
 	}
 
 	for name, tc := range tests {

@@ -2,6 +2,7 @@ package apikey
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -34,7 +35,16 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	keys, err := h.svc.List(r.Context(), m.WorkspaceID)
+	limit := 25
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 1 || parsed > 100 {
+			httpx.Error(w, r, httpx.BadRequest("limit must be between 1 and 100"))
+			return
+		}
+		limit = parsed
+	}
+	keys, nextCursor, err := h.svc.List(r.Context(), m.WorkspaceID, r.URL.Query().Get("cursor"), limit)
 	if err != nil {
 		httpx.Error(w, r, err)
 		return
@@ -44,7 +54,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	for _, k := range keys {
 		items = append(items, ToDTO(k))
 	}
-	httpx.List(w, items, httpx.Meta{})
+	httpx.List(w, items, httpx.Meta{NextCursor: nextCursor})
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {

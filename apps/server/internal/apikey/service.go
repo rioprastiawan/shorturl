@@ -8,7 +8,9 @@ package apikey
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -18,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rioprastiawan/shorturl/apps/server/internal/authctx"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/httpx"
@@ -63,6 +66,7 @@ const touchTimeout = 5 * time.Second
 
 // Service issues, lists, revokes, and authenticates API keys.
 type Service struct {
+	pool   *pgxpool.Pool
 	q      *store.Queries
 	logger *slog.Logger
 
@@ -73,8 +77,8 @@ type Service struct {
 }
 
 // NewService builds the API key service.
-func NewService(q *store.Queries, logger *slog.Logger) *Service {
-	return &Service{q: q, logger: logger, touched: make(map[uuid.UUID]time.Time)}
+func NewService(pool *pgxpool.Pool, q *store.Queries, logger *slog.Logger) *Service {
+	return &Service{pool: pool, q: q, logger: logger, touched: make(map[uuid.UUID]time.Time)}
 }
 
 // DefaultScopes is what a machine-to-machine key gets when the caller does not
@@ -147,14 +151,75 @@ func (s *Service) Create(
 	return store.ApiKey{}, "", httpx.Internal(lastErr)
 }
 
-// List returns every key in the workspace, revoked ones included, so the
-// dashboard can show what was withdrawn and when.
-func (s *Service) List(ctx context.Context, workspaceID uuid.UUID) ([]store.ApiKey, error) {
-	rows, err := s.q.ListAPIKeys(ctx, workspaceID)
-	if err != nil {
-		return nil, httpx.Internal(err)
+// List returns a stable keyset-paginated page, including revoked keys.
+func (s *Service) List(ctx context.Context, workspaceID uuid.UUID, cursor string, limit int) ([]store.ApiKey, *string, error) {
+	if limit <= 0 {
+		limit = 25
 	}
-	return rows, nil
+	if limit > 100 {
+		limit = 100
+	}
+
+	args := []any{workspaceID}
+	condition := ""
+	if cursor != "" {
+		createdAt, id, err := decodeListCursor(cursor)
+		if err != nil {
+			return nil, nil, httpx.BadRequest("Invalid cursor")
+		}
+		args = append(args, createdAt, id)
+		condition = " AND (created_at, id) < ($2, $3)"
+	}
+	args = append(args, limit+1)
+	query := `SELECT id, workspace_id, name, key_prefix, key_hash, scopes,
+        last_used_at, expires_at, revoked_at, created_by, created_at
+        FROM api_keys WHERE workspace_id = $1` + condition + `
+        ORDER BY created_at DESC, id DESC LIMIT $` + fmt.Sprint(len(args))
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, nil, httpx.Internal(err)
+	}
+	defer rows.Close()
+	items := make([]store.ApiKey, 0, limit+1)
+	for rows.Next() {
+		var item store.ApiKey
+		if err := rows.Scan(&item.ID, &item.WorkspaceID, &item.Name, &item.KeyPrefix,
+			&item.KeyHash, &item.Scopes, &item.LastUsedAt, &item.ExpiresAt,
+			&item.RevokedAt, &item.CreatedBy, &item.CreatedAt); err != nil {
+			return nil, nil, httpx.Internal(err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, httpx.Internal(err)
+	}
+
+	var next *string
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[len(items)-1]
+		value := base64.RawURLEncoding.EncodeToString([]byte(last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + last.ID.String()))
+		next = &value
+	}
+	return items, next, nil
+}
+
+func decodeListCursor(raw string) (time.Time, uuid.UUID, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return time.Time{}, uuid.Nil, err
+	}
+	before, after, found := strings.Cut(string(decoded), "|")
+	if !found {
+		return time.Time{}, uuid.Nil, fmt.Errorf("malformed cursor")
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, before)
+	if err != nil {
+		return time.Time{}, uuid.Nil, err
+	}
+	id, err := uuid.Parse(after)
+	return createdAt, id, err
 }
 
 // Revoke marks a key unusable. Already-revoked and unknown keys look the same

@@ -25,41 +25,22 @@ const props = withDefaults(defineProps<{
 
 const model = defineModel<LinkFormModel>({ required: true })
 
-const domainId = useId()
-const redirectId = useId()
-
 const selectedDomain = computed(() =>
   props.domains.find(d => d.id === model.value.domain_id) ?? props.domains[0] ?? null)
 
 const slugPrefix = computed(() =>
   selectedDomain.value ? `${selectedDomain.value.hostname}/` : undefined)
 
-const fieldClass = 'w-full rounded-md border border-(--color-border-strong) bg-transparent px-3 py-2 text-sm transition-colors disabled:opacity-50'
+const domainOptions = computed(() => props.domains.map(domain => ({
+  value: domain.id,
+  label: `${domain.hostname}${domain.is_default ? ' (default)' : ''}`,
+})))
 </script>
 
 <template>
   <div class="flex flex-col gap-4">
     <!-- Domain -->
-    <div class="flex flex-col gap-1.5">
-      <label :for="domainId" class="text-sm font-medium">
-        Domain
-        <span class="text-(--color-danger)" aria-hidden="true">*</span>
-      </label>
-      <select
-        :id="domainId"
-        v-model="model.domain_id"
-        :disabled="disabled"
-        :class="[fieldClass, errors.domain_id ? 'border-(--color-danger)' : '']"
-        :aria-invalid="errors.domain_id ? 'true' : undefined"
-      >
-        <option v-for="d in domains" :key="d.id" :value="d.id">
-          {{ d.hostname }}{{ d.is_default ? ' (default)' : '' }}
-        </option>
-      </select>
-      <p v-if="errors.domain_id" class="text-xs text-(--color-danger)" role="alert">
-        {{ errors.domain_id }}
-      </p>
-    </div>
+    <UiSelect v-model="model.domain_id" label="Domain" required :options="domainOptions" :disabled="disabled" :error="errors.domain_id" />
 
     <UiInput
       v-model="model.destination_url"
@@ -100,30 +81,18 @@ const fieldClass = 'w-full rounded-md border border-(--color-border-strong) bg-t
       </summary>
 
       <div class="mt-4 flex flex-col gap-4">
-        <div class="flex flex-col gap-1.5">
-          <label :for="redirectId" class="text-sm font-medium">Redirect type</label>
-          <select
-            :id="redirectId"
-            v-model="model.redirect_type"
-            :disabled="disabled"
-            :class="[fieldClass, errors.redirect_type ? 'border-(--color-danger)' : '']"
-          >
-            <option v-for="t in REDIRECT_TYPES" :key="t.value" :value="t.value">
-              {{ t.label }}
-            </option>
-          </select>
-          <p v-if="errors.redirect_type" class="text-xs text-(--color-danger)" role="alert">
-            {{ errors.redirect_type }}
-          </p>
-          <p v-else class="text-xs text-(--color-content-muted)">
-            302 keeps the destination changeable; 301 is cached by browsers, sometimes forever.
-          </p>
-        </div>
+        <UiSelect
+          v-model="model.redirect_type"
+          label="Redirect type"
+          :options="REDIRECT_TYPES"
+          :disabled="disabled"
+          :error="errors.redirect_type"
+          hint="302 keeps the destination changeable; 301 is cached by browsers, sometimes forever."
+        />
 
-        <UiInput
+        <UiDateTimePicker
           v-model="model.expires_at"
           label="Expiration"
-          type="datetime-local"
           :disabled="disabled"
           hint="After this moment the link stops resolving. Leave empty for no expiry."
           :error="errors.expires_at"
@@ -142,15 +111,9 @@ const fieldClass = 'w-full rounded-md border border-(--color-border-strong) bg-t
           :error="errors.password"
         />
 
-        <label v-if="hasPassword" class="flex items-center gap-2 text-sm">
-          <input
-            v-model="model.remove_password"
-            type="checkbox"
-            :disabled="disabled"
-            class="size-4 rounded border-(--color-border-strong)"
-          >
+        <UiCheckbox v-if="hasPassword" v-model="model.remove_password" :disabled="disabled">
           Remove the password from this link
-        </label>
+        </UiCheckbox>
 
         <UiInput
           v-model="model.max_clicks"

@@ -26,6 +26,8 @@ type UserDTO struct {
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	IsAdmin   bool      `json:"is_admin"`
+	Language  string    `json:"language"`
+	Timezone  string    `json:"timezone"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -36,6 +38,8 @@ func NewUserDTO(u *store.User) UserDTO {
 		Name:      u.Name,
 		Email:     u.Email,
 		IsAdmin:   u.IsAdmin,
+		Language:  u.Language,
+		Timezone:  u.Timezone,
 		CreatedAt: u.CreatedAt,
 	}
 }
@@ -63,4 +67,39 @@ type registerRequest struct {
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	Code     string `json:"code"`
+}
+
+type twoFactorSetupRequest struct {
+	Password string `json:"password"`
+}
+type twoFactorCodeRequest struct {
+	Code string `json:"code"`
+}
+type twoFactorDisableRequest struct {
+	Password string `json:"password"`
+	Code     string `json:"code"`
+}
+type twoFactorStatusDTO struct {
+	Enabled bool `json:"enabled"`
+}
+type twoFactorSetupDTO struct {
+	Secret        string   `json:"secret"`
+	URI           string   `json:"uri"`
+	RecoveryCodes []string `json:"recovery_codes"`
+}
+
+type updateProfileRequest struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+type updatePreferencesRequest struct {
+	Language string `json:"language"`
+	Timezone string `json:"timezone"`
 }

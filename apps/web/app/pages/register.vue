@@ -62,7 +62,7 @@ async function submit() {
 <template>
   <div class="flex flex-col gap-6">
     <header class="flex flex-col gap-1">
-      <h1 class="text-xl font-semibold tracking-tight">
+      <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
         {{ invitationToken ? 'Accept invitation' : 'Create your account' }}
       </h1>
       <p class="text-sm text-(--color-content-muted)">

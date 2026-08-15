@@ -127,6 +127,8 @@ type User struct {
 	Email        string
 	PasswordHash string
 	IsAdmin      bool
+	Language     string
+	Timezone     string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

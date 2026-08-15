@@ -8,7 +8,7 @@ withDefaults(defineProps<{
 </script>
 
 <template>
-  <div class="flex flex-col items-center gap-3 px-6 py-14 text-center">
+  <div class="flex flex-col items-center gap-2.5 px-5 py-10 text-center">
     <h3 class="font-medium">
       {{ title }}
     </h3>

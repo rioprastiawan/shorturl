@@ -9,6 +9,7 @@ withDefaults(defineProps<{
   disabled?: boolean
   autocomplete?: string
   prefix?: string
+  inputmode?: 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url'
 }>(), {
   label: undefined,
   hint: undefined,
@@ -19,6 +20,7 @@ withDefaults(defineProps<{
   disabled: false,
   autocomplete: undefined,
   prefix: undefined,
+  inputmode: undefined,
 })
 
 const model = defineModel<string | number | null>()
@@ -26,7 +28,7 @@ const id = useId()
 </script>
 
 <template>
-  <div class="flex flex-col gap-1.5">
+  <div class="flex flex-col gap-1">
     <label v-if="label" :for="id" class="text-sm font-medium">
       {{ label }}
       <span v-if="required" class="text-(--color-danger)" aria-hidden="true">*</span>
@@ -46,9 +48,10 @@ const id = useId()
         :required="required"
         :disabled="disabled"
         :autocomplete="autocomplete"
+        :inputmode="inputmode"
         :aria-invalid="error ? 'true' : undefined"
         :aria-describedby="error ? `${id}-error` : hint ? `${id}-hint` : undefined"
-        class="w-full border border-(--color-border-strong) bg-transparent px-3 py-2 text-sm transition-colors placeholder:text-(--color-content-subtle) disabled:opacity-50"
+        class="w-full border border-(--color-border-strong) bg-(--color-surface-raised) px-3 py-1.5 text-sm shadow-sm transition-[border-color,box-shadow,transform] duration-200 placeholder:text-(--color-content-subtle) hover:border-(--color-content-subtle) focus:-translate-y-px focus:shadow-md disabled:opacity-50"
         :class="[
           prefix ? 'rounded-r-md' : 'rounded-md',
           error ? 'border-(--color-danger)' : '',

@@ -24,6 +24,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/", h.list)
 	r.Post("/", h.create)
+	r.Post("/demo", h.createDemo)
 }
 
 // WorkspaceRoutes registers the endpoints for a single workspace, relative to
@@ -170,6 +171,34 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	httpx.Data(w, http.StatusCreated, NewDTO(ws, authctx.RoleOwner))
+}
+
+func (h *Handler) createDemo(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Size DemoSize `json:"size"`
+	}
+	if err := httpx.Decode(w, r, &req); err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	if req.Size == "" {
+		req.Size = DemoStarter
+	}
+	if _, _, ok := DemoEstimate(req.Size); !ok {
+		httpx.Error(w, r, httpx.BadRequest("size must be one of starter, busy, five_year"))
+		return
+	}
+	user := authctx.MustUser(r.Context())
+	if req.Size != DemoStarter && !user.IsAdmin {
+		httpx.Error(w, r, httpx.ErrForbidden)
+		return
+	}
+	ws, err := h.svc.CreateDemo(r.Context(), user.ID, req.Size)
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
 	httpx.Data(w, http.StatusCreated, NewDTO(ws, authctx.RoleOwner))
 }
 

@@ -7,16 +7,24 @@
  * links they meant to copy.
  */
 const props = defineProps<{ linkId: string }>()
-const emit = defineEmits<{ copy: [], delete: [] }>()
+const emit = defineEmits<{ copy: [], qr: [], delete: [] }>()
 
 const open = ref(false)
 const root = useTemplateRef<HTMLElement>('root')
+const trigger = useTemplateRef<HTMLElement>('trigger')
+const menu = useTemplateRef<HTMLElement>('menu')
+const { floatingStyle } = useFloatingPanel(trigger, open, {
+  align: 'end',
+  width: 176,
+  estimatedHeight: 164,
+})
 
-onClickOutside(root, () => (open.value = false))
+onClickOutside([root, menu], () => (open.value = false))
 
-function choose(action: 'copy' | 'delete') {
+function choose(action: 'copy' | 'qr' | 'delete') {
   open.value = false
   if (action === 'copy') emit('copy')
+  else if (action === 'qr') emit('qr')
   else emit('delete')
 }
 
@@ -26,6 +34,7 @@ const editTo = computed(() => `/dashboard/links/${props.linkId}`)
 <template>
   <div ref="root" class="relative inline-block text-left">
     <button
+      ref="trigger"
       type="button"
       class="rounded-md px-2 py-1 text-sm text-(--color-content-muted) transition-colors hover:bg-(--color-surface-muted) hover:text-(--color-content)"
       :aria-expanded="open"
@@ -37,12 +46,16 @@ const editTo = computed(() => `/dashboard/links/${props.linkId}`)
       &hellip;
     </button>
 
-    <div
-      v-if="open"
-      role="menu"
-      class="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-md border border-(--color-border) bg-(--color-surface-raised) py-1 shadow-lg"
-      @keydown.esc="open = false"
-    >
+    <Teleport to="body">
+      <Transition name="menu-down">
+        <div
+          v-if="open"
+          ref="menu"
+          role="menu"
+          :style="floatingStyle"
+          class="overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-raised) py-1.5 text-(--color-content) shadow-xl"
+          @keydown.esc="open = false"
+        >
       <NuxtLink
         role="menuitem"
         :to="editTo"
@@ -62,11 +75,21 @@ const editTo = computed(() => `/dashboard/links/${props.linkId}`)
       <button
         role="menuitem"
         type="button"
+        class="block w-full px-3 py-1.5 text-left text-sm text-(--color-content) hover:bg-(--color-surface-muted)"
+        @click="choose('qr')"
+      >
+        Show QR code
+      </button>
+      <button
+        role="menuitem"
+        type="button"
         class="block w-full px-3 py-1.5 text-left text-sm text-(--color-danger) hover:bg-(--color-surface-muted)"
         @click="choose('delete')"
       >
         Delete
       </button>
-    </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>

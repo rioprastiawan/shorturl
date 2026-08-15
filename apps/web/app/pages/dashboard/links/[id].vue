@@ -24,6 +24,7 @@ const linkId = computed(() => String(route.params.id))
 // -------------------------------------------------------------- the link
 
 const link = ref<Link | null>(null)
+const qrOpen = ref(false)
 
 useHead({
   title: () => (link.value ? `${link.value.domain}/${link.value.slug} · ShortURL` : 'Link · ShortURL'),
@@ -337,6 +338,9 @@ async function confirmDelete() {
               class="break-all text-2xl font-semibold tracking-tight hover:underline"
             >{{ link.domain }}/{{ link.slug }}</a>
             <UiCopyButton :value="link.short_url" label="Copy" />
+            <UiButton variant="ghost" size="sm" @click="qrOpen = true">
+              <Icon name="lucide:qr-code" size="16" /> QR code
+            </UiButton>
             <LinkStatusBadge :status="link.status" />
           </div>
           <p class="mt-1 break-all text-sm text-(--color-content-muted)" :title="link.destination_url">
@@ -467,6 +471,12 @@ async function confirmDelete() {
           </UiButton>
         </template>
       </UiModal>
+
+      <LinkQrModal
+        v-model="qrOpen"
+        :url="link.short_url"
+        :label="link.title || `${link.domain}/${link.slug}`"
+      />
     </template>
   </div>
 </template>

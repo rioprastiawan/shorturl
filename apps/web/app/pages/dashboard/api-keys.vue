@@ -21,26 +21,60 @@ const canManage = computed(() => ws.role.value === 'owner' || ws.role.value === 
 const keys = ref<ApiKey[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
+const nextCursor = ref<string | null>(null)
+const currentCursor = ref<string | null>(null)
+const cursorHistory = ref<Array<string | null>>([])
+const pageNumber = computed(() => cursorHistory.value.length + 1)
 
-async function load() {
+async function load(cursor: string | null = currentCursor.value): Promise<boolean> {
   const workspaceId = ws.activeId.value
   if (!workspaceId || !canManage.value) {
+    keys.value = []
+    nextCursor.value = null
     loading.value = false
-    return
+    return false
   }
   loading.value = true
   loadError.value = null
   try {
-    const res = await apiKeys.list(workspaceId)
+    const res = await apiKeys.list(workspaceId, { cursor: cursor ?? undefined, limit: 25 })
     keys.value = res.data
+    nextCursor.value = res.meta.next_cursor
+    return true
   } catch (error) {
     loadError.value = error instanceof ApiError ? error.message : 'Could not load API keys.'
+    return false
   } finally {
     loading.value = false
   }
 }
 
-watch([() => ws.activeId.value, canManage], () => load(), { immediate: true })
+async function resetList() {
+  currentCursor.value = null
+  cursorHistory.value = []
+  await load(null)
+}
+
+async function nextPage() {
+  const target = nextCursor.value
+  if (!target || loading.value) return
+  const previous = currentCursor.value
+  if (await load(target)) {
+    cursorHistory.value.push(previous)
+    currentCursor.value = target
+  }
+}
+
+async function previousPage() {
+  if (!cursorHistory.value.length || loading.value) return
+  const target = cursorHistory.value.at(-1) ?? null
+  if (await load(target)) {
+    cursorHistory.value.pop()
+    currentCursor.value = target
+  }
+}
+
+watch([() => ws.activeId.value, canManage], () => resetList(), { immediate: true })
 
 function keyState(key: ApiKey): { label: string, tone: 'success' | 'neutral' | 'warning' } {
   if (key.revoked_at) return { label: 'Revoked', tone: 'neutral' }
@@ -109,9 +143,9 @@ async function createKey() {
     if (expiresAt) body.expires_at = expiresAt
 
     const created = await apiKeys.create(workspaceId, body)
-    keys.value = [created, ...keys.value]
     createOpen.value = false
     revealed.value = created
+    await resetList()
   } catch (error) {
     if (error instanceof ApiError) {
       createError.value = error.field('name') ?? error.field('scopes') ?? error.field('expires_at') ?? error.message
@@ -166,27 +200,99 @@ const apiBase = computed(() => {
   return `${origin.value || 'https://your-shorturl-host'}${base}`
 })
 
-const snippet = computed(() => `curl -X POST ${apiBase.value}/links \\
+type CodeLanguage = 'curl' | 'javascript' | 'php' | 'go'
+const activeLanguage = ref<CodeLanguage>('curl')
+const languages: { value: CodeLanguage, label: string }[] = [
+  { value: 'curl', label: 'cURL' },
+  { value: 'javascript', label: 'Node.js' },
+  { value: 'php', label: 'PHP' },
+  { value: 'go', label: 'Go' },
+]
+
+const snippets = computed<Record<CodeLanguage, string>>(() => ({
+  curl: `curl -X POST ${apiBase.value}/links \\
   -H "Authorization: Bearer shr_live_..." \\
   -H "Content-Type: application/json" \\
   -H "Idempotency-Key: invoice-12345" \\
-  -d '{"destination_url":"https://example.com/very/long/url"}'`)
+  -d '{"destination_url":"https://example.com/very/long/url"}'`,
+  javascript: `const response = await fetch('${apiBase.value}/links', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer shr_live_...',
+    'Content-Type': 'application/json',
+    'Idempotency-Key': 'invoice-12345',
+  },
+  body: JSON.stringify({
+    destination_url: 'https://example.com/very/long/url',
+  }),
+})
+
+const result = await response.json()
+console.log(result.data.short_url)`,
+  php: `<?php
+$request = curl_init('${apiBase.value}/links');
+
+curl_setopt_array($request, [
+  CURLOPT_POST => true,
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_HTTPHEADER => [
+    'Authorization: Bearer shr_live_...',
+    'Content-Type: application/json',
+    'Idempotency-Key: invoice-12345',
+  ],
+  CURLOPT_POSTFIELDS => json_encode([
+    'destination_url' => 'https://example.com/very/long/url',
+  ]),
+]);
+
+$response = curl_exec($request);
+curl_close($request);
+echo $response;`,
+  go: `package main
+
+import (
+  "bytes"
+  "fmt"
+  "io"
+  "net/http"
+)
+
+func main() {
+  body := bytes.NewBufferString(` + "`" + `{"destination_url":"https://example.com/very/long/url"}` + "`" + `)
+  req, _ := http.NewRequest("POST", "${apiBase.value}/links", body)
+  req.Header.Set("Authorization", "Bearer shr_live_...")
+  req.Header.Set("Content-Type", "application/json")
+  req.Header.Set("Idempotency-Key", "invoice-12345")
+
+  response, _ := http.DefaultClient.Do(req)
+  defer response.Body.Close()
+  result, _ := io.ReadAll(response.Body)
+  fmt.Println(string(result))
+}`,
+}))
+
 </script>
 
 <template>
   <div class="flex flex-col gap-6">
     <header class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl font-semibold tracking-tight">
-          API keys
+        <p class="mb-1 text-sm font-semibold text-(--color-accent)">Developer</p>
+        <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
+          API integrations
         </h1>
         <p class="mt-0.5 text-sm text-(--color-content-muted)">
-          Machine-to-machine access for your own systems. A key is bound to this workspace.
+          Connect your systems securely with keys managed by this workspace.
         </p>
       </div>
-      <UiButton v-if="canManage" @click="openCreate">
-        Create key
-      </UiButton>
+      <div class="flex gap-2">
+        <UiButton variant="secondary" to="/dashboard/api-docs">
+          <Icon name="lucide:book-open-code" size="15" /> API docs
+        </UiButton>
+        <UiButton v-if="canManage" @click="openCreate">
+          Create key
+        </UiButton>
+      </div>
     </header>
 
     <UiCard v-if="!canManage" :padded="false">
@@ -238,7 +344,7 @@ const snippet = computed(() => `curl -X POST ${apiBase.value}/links \\
           <p class="text-sm text-(--color-danger)" role="alert">
             {{ loadError }}
           </p>
-          <UiButton class="mt-3" variant="secondary" size="sm" @click="load">
+          <UiButton class="mt-3" variant="secondary" size="sm" @click="load()">
             Try again
           </UiButton>
         </div>
@@ -330,20 +436,95 @@ const snippet = computed(() => `curl -X POST ${apiBase.value}/links \\
               </tr>
             </tbody>
           </table>
+          <div v-if="cursorHistory.length || nextCursor" class="flex items-center justify-between border-t border-(--color-border) px-3 py-2.5">
+            <p class="text-xs text-(--color-content-muted)">Page {{ pageNumber }} · Up to 25 keys per page</p>
+            <div class="flex gap-2">
+              <UiButton variant="secondary" size="sm" :disabled="!cursorHistory.length || loading" @click="previousPage">
+                <Icon name="lucide:chevron-left" size="14" /> Previous
+              </UiButton>
+              <UiButton variant="secondary" size="sm" :disabled="!nextCursor || loading" @click="nextPage">
+                Next <Icon name="lucide:chevron-right" size="14" />
+              </UiButton>
+            </div>
+          </div>
         </div>
       </UiCard>
 
-      <!-- Usage -->
-      <UiCard title="Using a key" description="Send the key as a bearer token. The workspace comes from the key, never from the request.">
-        <template #actions>
-          <UiCopyButton :value="snippet" label="Copy snippet" />
-        </template>
-        <pre class="overflow-x-auto rounded-md bg-(--color-surface-muted) p-4 font-mono text-xs leading-relaxed"><code>{{ snippet }}</code></pre>
-        <p class="mt-3 text-sm text-(--color-content-muted)">
-          <code class="font-mono text-xs">Idempotency-Key</code> is optional but recommended: retrying a
-          request with the same key returns the original link instead of creating a duplicate.
-        </p>
+      <!-- Developer documentation lives beside key management so a fresh
+           installation is useful without an external documentation site. -->
+      <UiCard title="API quickstart" description="Create and manage short links from your application.">
+        <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
+          <div class="min-w-0">
+            <div class="mb-3 flex gap-1 overflow-x-auto rounded-lg bg-(--color-surface-muted) p-1" role="tablist" aria-label="Code language">
+              <button
+                v-for="language in languages"
+                :key="language.value"
+                type="button"
+                role="tab"
+                :aria-selected="activeLanguage === language.value"
+                class="rounded-md px-3 py-1.5 text-xs font-semibold transition-all"
+                :class="activeLanguage === language.value
+                  ? 'bg-(--color-surface-raised) text-(--color-content) shadow-sm'
+                  : 'text-(--color-content-muted) hover:text-(--color-content)'"
+                @click="activeLanguage = language.value"
+              >
+                {{ language.label }}
+              </button>
+            </div>
+
+            <DeveloperCodeBlock :code="snippets[activeLanguage]" :language="activeLanguage" />
+          </div>
+
+          <aside class="rounded-xl border border-(--color-border) bg-(--color-surface-muted)/60 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-(--color-content-subtle)">Connection</p>
+            <dl class="mt-3 space-y-3 text-xs">
+              <div>
+                <dt class="text-(--color-content-muted)">Base URL</dt>
+                <dd class="mt-0.5 break-all font-mono text-(--color-content)">{{ apiBase }}</dd>
+              </div>
+              <div>
+                <dt class="text-(--color-content-muted)">Authentication</dt>
+                <dd class="mt-0.5 font-mono text-(--color-content)">Bearer token</dd>
+              </div>
+              <div>
+                <dt class="text-(--color-content-muted)">Response format</dt>
+                <dd class="mt-0.5 font-mono text-(--color-content)">application/json</dd>
+              </div>
+            </dl>
+            <p class="mt-4 border-t border-(--color-border) pt-3 text-xs leading-relaxed text-(--color-content-muted)">
+              The API key automatically selects its workspace. Never send a workspace ID in the request.
+            </p>
+          </aside>
+        </div>
+
+        <div class="mt-4 rounded-lg border border-(--color-border) bg-(--color-surface-muted)/50 px-3.5 py-3 text-xs leading-relaxed text-(--color-content-muted)">
+          <strong class="text-(--color-content)">Safe retries:</strong>
+          <code class="mx-1 font-mono text-(--color-accent)">Idempotency-Key</code>
+          is optional but recommended. Reusing it with the same request returns the original link instead of creating a duplicate.
+        </div>
       </UiCard>
+
+      <section class="flex flex-col gap-4 rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex items-start gap-3">
+          <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-(--color-accent)/12 text-(--color-accent)">
+            <Icon name="lucide:book-open-code" size="18" />
+          </span>
+          <div>
+            <h2 class="text-sm font-semibold">Need the complete API reference?</h2>
+            <p class="mt-0.5 text-xs leading-relaxed text-(--color-content-muted)">
+              Explore request fields, response examples, errors, pagination, and every available endpoint.
+            </p>
+          </div>
+        </div>
+        <div class="flex shrink-0 flex-wrap gap-2 pl-12 sm:pl-0">
+          <UiButton variant="secondary" to="/dashboard/api-docs">
+            View API documentation
+          </UiButton>
+          <a href="/openapi.json" download="shorturl-openapi.json" class="inline-flex items-center justify-center gap-1.5 rounded-md border border-(--color-border-strong) px-3 py-1.5 text-sm font-semibold shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-(--color-surface-muted) hover:shadow-md active:translate-y-0">
+            <Icon name="lucide:download" size="15" /> OpenAPI
+          </a>
+        </div>
+      </section>
     </template>
 
     <!-- Create -->
@@ -361,36 +542,28 @@ const snippet = computed(() => `curl -X POST ${apiBase.value}/links \\
           <legend class="text-sm font-medium">
             Scopes
           </legend>
-          <label v-for="scope in ALL_SCOPES" :key="scope.value" class="flex items-start gap-2 text-sm">
-            <input
+          <UiCheckbox
+            v-for="scope in ALL_SCOPES"
+            :key="scope.value"
               v-model="newScopes"
-              type="checkbox"
               :value="scope.value"
               :disabled="creating"
-              class="mt-0.5 size-4 rounded border-(--color-border-strong)"
-            >
+          >
             <span>
               <code class="font-mono text-xs">{{ scope.label }}</code>
               <span class="block text-xs text-(--color-content-muted)">{{ scope.hint }}</span>
             </span>
-          </label>
+          </UiCheckbox>
         </fieldset>
 
-        <UiInput
+        <UiDateTimePicker
           v-model="newExpiresAt"
           label="Expiration time (optional)"
-          type="datetime-local"
           :disabled="creating"
           hint="Leave empty for a key that never expires. Time is interpreted in your local timezone."
         />
 
-        <label class="flex items-start gap-2 text-sm">
-          <input
-            v-model="newTest"
-            type="checkbox"
-            :disabled="creating"
-            class="mt-0.5 size-4 rounded border-(--color-border-strong)"
-          >
+        <UiCheckbox v-model="newTest" :disabled="creating">
           <span>
             Test key
             <span class="block text-xs text-(--color-content-muted)">
@@ -399,7 +572,7 @@ const snippet = computed(() => `curl -X POST ${apiBase.value}/links \\
               just makes the environment obvious in your own logs.
             </span>
           </span>
-        </label>
+        </UiCheckbox>
 
         <p v-if="createError" class="text-sm text-(--color-danger)" role="alert">
           {{ createError }}

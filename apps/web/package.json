@@ -11,13 +11,18 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
+    "@nuxt/icon": "^2.5.0",
     "nuxt": "^4.5.2",
+    "qrcode": "^1.5.4",
     "vue": "^3.5.41",
     "vue-router": "^4.6.3"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "^1.2.123",
+    "@nuxtjs/color-mode": "^4.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.2.0",
+    "@types/qrcode": "^1.5.6",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vue-tsc": "^3.1.4"

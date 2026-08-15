@@ -25,7 +25,15 @@ export interface User {
   name: string
   email: string
   is_admin: boolean
+  language: 'en' | 'id'
+  timezone: string
   created_at: string
+}
+
+export interface TwoFactorSetup {
+  secret: string
+  uri: string
+  recovery_codes: string[]
 }
 
 export type Role = 'owner' | 'admin' | 'member'
@@ -171,7 +179,7 @@ export interface ClickSummary {
   average_clicks_per_day: number
 }
 
-export type AnalyticsRange = '24h' | '7d' | '30d' | '90d' | 'custom'
+export type AnalyticsRange = '24h' | '7d' | '30d' | '90d' | '1y' | '5y' | 'custom'
 
 export interface ClicksReport {
   range: AnalyticsRange

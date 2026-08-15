@@ -17,10 +17,11 @@ const tones = {
     aria-live="polite"
   >
     <TransitionGroup
-      enter-active-class="transition duration-150 ease-out"
-      enter-from-class="translate-y-1 opacity-0"
-      leave-active-class="transition duration-100 ease-in"
-      leave-to-class="opacity-0"
+      enter-active-class="transition duration-300 ease-out"
+      enter-from-class="translate-x-4 scale-95 opacity-0"
+      leave-active-class="transition duration-200 ease-in"
+      leave-to-class="translate-x-3 scale-95 opacity-0"
+      move-class="transition-transform duration-200"
     >
       <div
         v-for="toast in toasts"

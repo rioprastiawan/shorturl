@@ -212,7 +212,8 @@ async function confirmDelete() {
 <template>
   <div class="flex flex-col gap-6">
     <header>
-      <h1 class="text-xl font-semibold tracking-tight">
+      <p class="mb-1 text-sm font-semibold text-(--color-accent)">Manage</p>
+      <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
         Domains
       </h1>
       <p class="mt-0.5 text-sm text-(--color-content-muted)">

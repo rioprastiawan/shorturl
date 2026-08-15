@@ -54,6 +54,22 @@ func TestParseRange(t *testing.T) {
 			granularity: GranularityWeek,
 		},
 		{
+			name:        "1y buckets by week",
+			label:       "1y",
+			wantLabel:   "1y",
+			wantFrom:    now.AddDate(-1, 0, 0),
+			wantTo:      now,
+			granularity: GranularityWeek,
+		},
+		{
+			name:        "5y buckets by month",
+			label:       "5y",
+			wantLabel:   "5y",
+			wantFrom:    now.AddDate(-5, 0, 0),
+			wantTo:      now,
+			granularity: GranularityMonth,
+		},
+		{
 			name:        "custom under a day buckets by hour",
 			label:       "custom",
 			from:        "2026-08-15T00:00:00Z",
@@ -116,7 +132,7 @@ func TestParseRangeRejectsInvalidInput(t *testing.T) {
 		from  string
 		to    string
 	}{
-		{"unknown label", "1y", "", ""},
+		{"unknown label", "10y", "", ""},
 		{"a number is not a label", "7", "", ""},
 		{"days are case sensitive", "7D", "", ""},
 		{"custom without bounds", "custom", "", ""},
@@ -158,6 +174,8 @@ func TestParseRangeGranularityBoundaries(t *testing.T) {
 		{"exactly 30 days", 30 * 24 * time.Hour, GranularityDay},
 		{"just over 30 days", 30*24*time.Hour + time.Second, GranularityWeek},
 		{"90 days", 90 * 24 * time.Hour, GranularityWeek},
+		{"one year", 365 * 24 * time.Hour, GranularityWeek},
+		{"five years", 5 * 365 * 24 * time.Hour, GranularityMonth},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

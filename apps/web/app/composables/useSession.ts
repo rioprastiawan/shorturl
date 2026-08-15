@@ -1,6 +1,13 @@
 import type { User } from '~/types/api'
 import { ApiError } from './useApi'
 
+function persistPreferences(user: User | null) {
+  if (!import.meta.client || !user) return
+  localStorage.setItem('shorturl-language', user.language || 'en')
+  localStorage.setItem('shorturl-timezone', user.timezone || 'UTC')
+  document.documentElement.lang = user.language || 'en'
+}
+
 /**
  * The authenticated user, resolved once per page load.
  *
@@ -19,6 +26,7 @@ export function useSession() {
 
     try {
       user.value = await services.auth.me()
+      persistPreferences(user.value)
     } catch (error) {
       // A 401 here is the normal "not signed in" case, not a failure.
       if (!(error instanceof ApiError) || !error.isUnauthorized) {
@@ -33,6 +41,7 @@ export function useSession() {
 
   function set(next: User | null) {
     user.value = next
+    persistPreferences(next)
     loaded.value = true
   }
 

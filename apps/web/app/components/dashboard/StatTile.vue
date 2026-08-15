@@ -15,14 +15,14 @@ withDefaults(defineProps<{
 </script>
 
 <template>
-  <div class="rounded-lg border border-(--color-border) bg-(--color-surface-raised) px-4 py-3">
+  <div class="motion-card-in rounded-xl border border-(--color-border) bg-(--color-surface-raised) px-4 py-3.5 shadow-[0_1px_2px_rgba(16,48,63,0.03)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-(--color-border-strong) hover:shadow-md">
     <p
-      class="text-2xl font-semibold tabular-nums tracking-tight"
+      class="text-2xl font-bold tabular-nums tracking-tight"
       :class="tone === 'warning' ? 'text-(--color-warning)' : ''"
     >
       {{ value }}
     </p>
-    <p class="mt-0.5 text-xs text-(--color-content-muted)">
+    <p class="mt-0.5 text-xs font-medium text-(--color-content-muted)">
       {{ label }}
     </p>
   </div>

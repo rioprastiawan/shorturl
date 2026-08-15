@@ -83,7 +83,8 @@ const hasData = computed(() => totalClicks.value > 0 || topLinks.value.length > 
   <div class="flex flex-col gap-6">
     <header class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl font-semibold tracking-tight">
+        <p class="mb-1 text-sm font-semibold text-(--color-accent)">Workspace</p>
+        <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
           Analytics
         </h1>
         <p class="mt-0.5 text-sm text-(--color-content-muted)">

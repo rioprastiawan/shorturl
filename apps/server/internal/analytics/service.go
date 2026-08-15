@@ -18,9 +18,10 @@ import (
 // ever reach the query: the value is interpolated by PostgreSQL as an
 // identifier-like string, so it is chosen here and never taken from input.
 const (
-	GranularityHour = "hour"
-	GranularityDay  = "day"
-	GranularityWeek = "week"
+	GranularityHour  = "hour"
+	GranularityDay   = "day"
+	GranularityWeek  = "week"
+	GranularityMonth = "month"
 )
 
 // dimensionLimit caps every breakdown. Ten rows is what the dashboard renders;
@@ -78,6 +79,10 @@ func ParseRange(label, from, to string, now time.Time) (Range, error) {
 		start, end = now.AddDate(0, 0, -30), now
 	case "90d":
 		start, end = now.AddDate(0, 0, -90), now
+	case "1y":
+		start, end = now.AddDate(-1, 0, 0), now
+	case "5y":
+		start, end = now.AddDate(-5, 0, 0), now
 	case "custom":
 		var err error
 		if start, err = parseRFC3339("from", from); err != nil {
@@ -93,7 +98,7 @@ func ParseRange(label, from, to string, now time.Time) (Range, error) {
 			return Range{}, httpx.BadRequest("A custom range may span at most 366 days")
 		}
 	default:
-		return Range{}, httpx.BadRequest("range must be one of 24h, 7d, 30d, 90d, custom")
+		return Range{}, httpx.BadRequest("range must be one of 24h, 7d, 30d, 90d, 1y, 5y, custom")
 	}
 
 	return Range{
@@ -110,6 +115,8 @@ func granularityFor(span time.Duration) string {
 		return GranularityHour
 	case span <= 30*24*time.Hour:
 		return GranularityDay
+	case span > 366*24*time.Hour:
+		return GranularityMonth
 	default:
 		return GranularityWeek
 	}

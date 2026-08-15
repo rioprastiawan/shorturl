@@ -26,12 +26,12 @@ const variants: Record<Variant, string> = {
 }
 
 const sizes: Record<Size, string> = {
-  sm: 'px-2.5 py-1 text-sm gap-1.5',
-  md: 'px-3.5 py-2 text-sm gap-2',
+  sm: 'px-2.5 py-1.5 text-xs gap-1.5',
+  md: 'px-3 py-1.5 text-sm gap-1.5',
 }
 
 const classes = computed(() => [
-  'inline-flex items-center justify-center rounded-md border font-medium transition-colors',
+  'inline-flex items-center justify-center rounded-md border font-semibold shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98] active:shadow-sm',
   'disabled:cursor-not-allowed disabled:opacity-50',
   variants[props.variant],
   sizes[props.size],

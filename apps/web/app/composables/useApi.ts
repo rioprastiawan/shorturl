@@ -114,8 +114,17 @@ export function useApi() {
       return res?.data
     },
 
+    async put<T>(path: string, body?: unknown): Promise<T> {
+      const res = await request<Envelope<T>>(path, { method: 'PUT', body })
+      return res?.data
+    },
+
     async del(path: string, query?: Query): Promise<void> {
       await request<void>(path, { method: 'DELETE', query })
+    },
+
+    async deleteWithBody(path: string, body: unknown): Promise<void> {
+      await request<void>(path, { method: 'DELETE', body })
     },
   }
 }

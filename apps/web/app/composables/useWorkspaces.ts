@@ -54,6 +54,13 @@ export function useWorkspaces() {
     return workspace
   }
 
+  async function createDemo(size: 'starter' | 'busy' | 'five_year'): Promise<Workspace> {
+    const workspace = await services.workspaces.createDemo({ size })
+    workspaces.value = [...workspaces.value, workspace]
+    select(workspace.id)
+    return workspace
+  }
+
   /**
    * The active workspace ID, for callers that cannot proceed without one.
    * Throws rather than silently querying `/workspaces/null/...`.
@@ -73,6 +80,7 @@ export function useWorkspaces() {
     load,
     select,
     create,
+    createDemo,
     requireActiveId,
   }
 }
