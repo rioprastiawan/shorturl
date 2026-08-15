@@ -1,0 +1,1332 @@
+openapi: 3.1.0
+
+info:
+  title: ShortURL Public API
+  version: "1.0.0"
+  summary: Machine-to-machine REST API for creating and managing short links.
+  description: |
+    The public API is the surface internal systems integrate against. It is
+    authenticated with a workspace API key, and **the workspace is always
+    derived from the key** — there is no workspace ID in any path or body, and a
+    key issued for one workspace can never see or touch another.
+
+    ## Envelopes
+
+    Every response uses one of three shapes.
+
+    A single resource:
+
+    ```json
+    { "data": { "id": "…", "short_url": "https://short.example.com/aB7kP2" } }
+    ```
+
+    A collection:
+
+    ```json
+    { "data": [], "meta": { "next_cursor": null } }
+    ```
+
+    A failure:
+
+    ```json
+    {
+      "error": {
+        "code": "validation_error",
+        "message": "The request is invalid",
+        "fields": { "destination_url": ["must include a scheme, for example https://"] },
+        "request_id": "3f9a1c2e"
+      }
+    }
+    ```
+
+    `error.code` is stable and safe to branch on. `error.message` is for humans
+    and may change. `error.request_id` matches the server log line and is what
+    you quote when asking an operator what happened.
+
+    ## Scopes
+
+    | Scope | Grants |
+    |---|---|
+    | `links:read` | `GET /links`, `GET /links/{linkId}`, `GET /links/by-reference/{externalReference}` |
+    | `links:write` | `POST /links`, `PATCH /links/{linkId}`, `DELETE /links/{linkId}` |
+    | `analytics:read` | Not used by any endpoint in this document. |
+
+    A new key gets `links:read` and `links:write` unless the creator narrows it.
+    Calling an endpoint your key lacks the scope for returns **403
+    `insufficient_scope`**, which is deliberately distinct from **401
+    `unauthorized`**: the first means your key is valid but too narrow, the
+    second means the key itself was not accepted.
+
+    ## Rate limit
+
+    **120 requests per minute per API key** by default, configured with the
+    `RATE_LIMIT_API_PER_MINUTE` environment variable on the server. The limit is
+    keyed on the API key, not the client IP, so several hosts sharing one key
+    share one allowance and several keys behind one NAT do not interfere.
+
+    The bucket is a token bucket with a burst equal to the full per-minute
+    allowance: 120 immediately, then refilling at 2 per second.
+
+    Authenticated responses carry `X-RateLimit-Limit`. A rejected request
+    returns **429 `rate_limited`** with `Retry-After: 60`. There is no
+    `X-RateLimit-Remaining` or `X-RateLimit-Reset` header.
+
+    ## Request rules that apply everywhere
+
+    - If you send a `Content-Type` header it must be `application/json`;
+      anything else is 400 `bad_request`. An absent header is accepted, but
+      send it anyway.
+    - Unknown JSON fields are rejected with 422 `validation_error` rather than
+      ignored, so a typo in an integration surfaces on the first call.
+    - Bodies are capped at 1 MB; `metadata` is capped at 8 KB.
+    - A malformed `{linkId}` returns 404, not 400 — an unparseable ID and a
+      missing link are the same thing from outside.
+
+servers:
+  - url: https://{appDomain}/api/v1
+    description: Self-hosted installation. The API answers only on the application domain — a verified short-link domain serves redirects and returns 404 for /api/v1.
+    variables:
+      appDomain:
+        default: short.example.com
+        description: The APP_DOMAIN of your installation.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Links
+    description: Create, read, update, and retire short links.
+
+paths:
+  /links:
+    get:
+      operationId: listLinks
+      tags: [Links]
+      summary: List links
+      description: |
+        Returns a cursor-paginated page of the workspace's links, newest first,
+        ordered by `(created_at DESC, id DESC)`.
+
+        Pagination is keyset-based: pass `meta.next_cursor` back as `cursor` to
+        get the next page. When `meta.next_cursor` is `null` you have reached
+        the end. Cursors are opaque — do not construct or parse them.
+
+        **Required scope:** `links:read`
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: Case-insensitive substring match against slug, title, and destination URL.
+          schema:
+            type: string
+          example: invoice
+        - name: status
+          in: query
+          required: false
+          description: Exact status match. An unrecognised value is a 422, not an empty page.
+          schema:
+            type: string
+            enum: [active, disabled, archived]
+          example: active
+        - name: external_reference
+          in: query
+          required: false
+          description: |
+            Exact match on the caller-owned reference. Because the reference is
+            unique per workspace this returns at most one link — but it returns
+            a list, and an empty list rather than a 404 when nothing matches.
+            Use `GET /links/by-reference/{externalReference}` if you would
+            rather have the 404.
+          schema:
+            type: string
+            maxLength: 255
+          example: "document:0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44"
+        - name: domain_id
+          in: query
+          required: false
+          description: Restrict to one domain. This filter takes the domain's UUID, not its hostname.
+          schema:
+            type: string
+            format: uuid
+          example: 4b6e3c1a-9d52-4d0a-8f77-2c1e5b9a7d31
+        - name: created_after
+          in: query
+          required: false
+          description: Inclusive lower bound on `created_at`, RFC 3339.
+          schema:
+            type: string
+            format: date-time
+          example: "2026-08-01T00:00:00Z"
+        - name: created_before
+          in: query
+          required: false
+          description: Inclusive upper bound on `created_at`, RFC 3339.
+          schema:
+            type: string
+            format: date-time
+          example: "2026-08-31T23:59:59Z"
+        - name: limit
+          in: query
+          required: false
+          description: |
+            Page size. Values below 1 are raised to 1 and values above 100 are
+            lowered to 100; a non-numeric value falls back to the default rather
+            than erroring.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+          example: 50
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from the previous page's `meta.next_cursor`.
+          schema:
+            type: string
+          example: MjAyNi0wOC0xNVQwOToxNDoyMi44MTFafDAxOThjN2UyLTRmMWEtN2MzZC05YjIxLTVmMGEyYzhlMWQ0NA
+      responses:
+        "200":
+          description: A page of links.
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinkList"
+              examples:
+                page:
+                  summary: First page with more to come
+                  value:
+                    data:
+                      - id: 0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44
+                        short_url: https://short.example.com/invoice-12345
+                        slug: invoice-12345
+                        domain: short.example.com
+                        domain_id: 4b6e3c1a-9d52-4d0a-8f77-2c1e5b9a7d31
+                        destination_url: https://erp.internal.example.com/invoices/12345
+                        title: "Invoice #12345"
+                        status: active
+                        redirect_type: 302
+                        has_password: false
+                        expires_at: "2026-09-13T00:00:00Z"
+                        max_clicks: null
+                        click_count: 17
+                        external_reference: "invoice:12345"
+                        metadata:
+                          source: erp
+                          document_type: invoice
+                        created_via: api
+                        created_at: "2026-08-14T09:14:22.811Z"
+                        updated_at: "2026-08-14T09:14:22.811Z"
+                    meta:
+                      next_cursor: MjAyNi0wOC0xNFQwOToxNDoyMi44MTFafDAxOThjN2UyLTRmMWEtN2MzZC05YjIxLTVmMGEyYzhlMWQ0NA
+                empty:
+                  summary: No matches
+                  value:
+                    data: []
+                    meta:
+                      next_cursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      operationId: createLink
+      tags: [Links]
+      summary: Create a link
+      description: |
+        Creates a short link and returns it. `destination_url` is the only
+        required field; everything else has a server-side default.
+
+        - **Domain.** Omit both `domain` and `domain_id` and the workspace's
+          default active domain is used. If the workspace has no default domain
+          yet, this is a 409 `no_default_domain` — connect and verify a domain
+          in the dashboard first. If the named domain exists but is not
+          `active`, it is a 409 `domain_not_active`.
+        - **Slug.** Omit `slug` and a 7-character cryptographically random slug
+          is generated from an alphabet that excludes `0/O` and `1/l/I`. Supply
+          one and it must be unique on that domain, or 409 `slug_taken`.
+        - **External reference.** Optional and unique per workspace. Reusing one
+          is a 409 `external_reference_taken`, which is your signal that you
+          already shortened this thing.
+
+        The most important field in the response is `data.short_url`.
+
+        ## Idempotency
+
+        Send an `Idempotency-Key` header to make retries safe. See the header
+        parameter below for the exact rules.
+
+        **Required scope:** `links:write`
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: |
+            A caller-generated value that makes this create safe to retry. Use
+            something derived from the thing you are shortening — for example
+            `document:<uuid>` — not a fresh random value per attempt, or a retry
+            will not be recognised as one.
+
+            Behaviour, exactly:
+
+            - **First use of a key** → the link is created, **201**.
+            - **Same key, same body** → the original link is returned, **200**.
+              No second link is created. "Same body" is judged by a SHA-256 hash
+              of the body canonicalised as JSON, so whitespace and key order —
+              at every level of nesting, `metadata` included — do not matter.
+              Values and types do: `{"a":1}` and `{"a":"1"}` are different
+              requests.
+            - **Same key, different body** → **409 `idempotency_conflict`**.
+              Nothing is created. This is a bug in the caller.
+            - **Same key, but the link it created has since been deleted** →
+              **409 `idempotency_link_gone`**. Retry with a new key.
+            - **Records are retained for 24 hours.** After that the key is
+              forgotten and reusing it creates a second link.
+
+            A replay returns the link's **current** state, not a stored snapshot
+            of the original response. If the link was edited between the first
+            request and the retry, the retry reflects the edit.
+
+            The key is scoped to your workspace, so two workspaces can use the
+            same key value without colliding. Maximum 255 characters; longer is
+            a 400. Omitting the header disables all of the above — the request
+            simply creates a link every time.
+
+            The body must be a JSON object for the fingerprint to be computable;
+            it always is for this endpoint.
+          schema:
+            type: string
+            maxLength: 255
+          example: "document:0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLinkRequest"
+            examples:
+              minimal:
+                summary: Minimal — random slug on the default domain
+                value:
+                  destination_url: https://docs.internal.example.com/documents/0198c7e2?token=eyJhbGciOi
+              documentShare:
+                summary: Document share, the primary integration pattern
+                value:
+                  destination_url: https://docs.internal.example.com/documents/0198c7e2?token=eyJhbGciOi
+                  external_reference: "document:0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44"
+                  title: Q3 Handover Pack
+                  metadata:
+                    source: intranet
+                    document_type: handover
+              fullControls:
+                summary: Every optional control
+                value:
+                  destination_url: https://erp.internal.example.com/invoices/12345
+                  domain: short.example.com
+                  slug: invoice-12345
+                  title: "Invoice #12345"
+                  redirect_type: 302
+                  password: "s3cret-passphrase"
+                  expires_at: "2026-09-13T00:00:00Z"
+                  max_clicks: 500
+                  external_reference: "invoice:12345"
+                  metadata:
+                    source: erp
+                    document_type: invoice
+                    document_id: "12345"
+      responses:
+        "200":
+          description: |
+            Idempotent replay. The `Idempotency-Key` had already been used with
+            an identical body; this is the link that first request created, and
+            no new link was made. The 200 rather than 201 is how you tell a
+            retry from a first success.
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinkEnvelope"
+              example:
+                data:
+                  id: 0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44
+                  short_url: https://short.example.com/aB7kP2q
+                  slug: aB7kP2q
+                  domain: short.example.com
+                  domain_id: 4b6e3c1a-9d52-4d0a-8f77-2c1e5b9a7d31
+                  destination_url: https://docs.internal.example.com/documents/0198c7e2?token=eyJhbGciOi
+                  title: Q3 Handover Pack
+                  status: active
+                  redirect_type: 302
+                  has_password: false
+                  expires_at: null
+                  max_clicks: null
+                  click_count: 3
+                  external_reference: "document:0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44"
+                  metadata:
+                    source: intranet
+                    document_type: handover
+                  created_via: api
+                  created_at: "2026-08-15T10:02:41.117Z"
+                  updated_at: "2026-08-15T10:02:41.117Z"
+        "201":
+          description: The link was created.
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinkEnvelope"
+              example:
+                data:
+                  id: 0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44
+                  short_url: https://short.example.com/aB7kP2q
+                  slug: aB7kP2q
+                  domain: short.example.com
+                  domain_id: 4b6e3c1a-9d52-4d0a-8f77-2c1e5b9a7d31
+                  destination_url: https://docs.internal.example.com/documents/0198c7e2?token=eyJhbGciOi
+                  title: null
+                  status: active
+                  redirect_type: 302
+                  has_password: false
+                  expires_at: null
+                  max_clicks: null
+                  click_count: 0
+                  external_reference: "document:0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44"
+                  created_via: api
+                  created_at: "2026-08-15T10:02:41.117Z"
+                  updated_at: "2026-08-15T10:02:41.117Z"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: |
+            The request cannot be satisfied in the workspace's current state.
+            Branch on `error.code`.
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                slug_taken:
+                  summary: slug_taken — the slug you asked for is in use on that domain
+                  value:
+                    error:
+                      code: slug_taken
+                      message: That slug is already in use on this domain
+                      request_id: 3f9a1c2e
+                external_reference_taken:
+                  summary: external_reference_taken — you already shortened this
+                  value:
+                    error:
+                      code: external_reference_taken
+                      message: A link with that external_reference already exists in this workspace
+                      request_id: 3f9a1c2e
+                no_default_domain:
+                  summary: no_default_domain — no domain is connected yet
+                  value:
+                    error:
+                      code: no_default_domain
+                      message: This workspace has no verified default domain. Add and verify a domain, or pass an explicit domain.
+                      request_id: 3f9a1c2e
+                domain_not_active:
+                  summary: domain_not_active — the domain exists but is not verified
+                  value:
+                    error:
+                      code: domain_not_active
+                      message: Domain short.example.com is pending. Verify it before creating links on it.
+                      request_id: 3f9a1c2e
+                idempotency_conflict:
+                  summary: idempotency_conflict — same key, different body
+                  value:
+                    error:
+                      code: idempotency_conflict
+                      message: The idempotency key was already used with a different request
+                      request_id: 3f9a1c2e
+                idempotency_link_gone:
+                  summary: idempotency_link_gone — the key's link was deleted
+                  value:
+                    error:
+                      code: idempotency_link_gone
+                      message: The link created with this key no longer exists
+                      request_id: 3f9a1c2e
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+      x-codeSamples:
+        - lang: Shell
+          label: curl
+          source: |
+            curl -sS -X POST "https://short.example.com/api/v1/links" \
+              -H "Authorization: Bearer $SHORTURL_API_KEY" \
+              -H "Content-Type: application/json" \
+              -H "Idempotency-Key: document:0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44" \
+              -d '{
+                    "destination_url": "https://docs.internal.example.com/documents/0198c7e2?token=eyJhbGciOi",
+                    "external_reference": "document:0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44",
+                    "title": "Q3 Handover Pack"
+                  }'
+        - lang: PHP
+          label: Laravel (Http facade)
+          source: |
+            <?php
+
+            use Illuminate\Support\Facades\Http;
+
+            $documentId = '0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44';
+
+            $response = Http::baseUrl('https://short.example.com/api/v1')
+                ->withToken(config('services.shorturl.key'))   // shr_live_...
+                ->acceptJson()
+                ->asJson()
+                ->timeout(10)
+                ->retry(3, 200, throw: false)
+                ->withHeaders(['Idempotency-Key' => "document:{$documentId}"])
+                ->post('/links', [
+                    'destination_url'    => $longUrl,
+                    'external_reference' => "document:{$documentId}",
+                    'title'              => 'Q3 Handover Pack',
+                ]);
+
+            if ($response->failed()) {
+                throw new RuntimeException(
+                    'ShortURL '.$response->json('error.code', 'unknown')
+                    .': '.$response->json('error.message', $response->body())
+                );
+            }
+
+            $shortUrl = $response->json('data.short_url');
+        - lang: Python
+          label: requests
+          source: |
+            import os
+            import requests
+
+            document_id = "0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44"
+
+            response = requests.post(
+                "https://short.example.com/api/v1/links",
+                headers={
+                    "Authorization": f"Bearer {os.environ['SHORTURL_API_KEY']}",
+                    "Content-Type": "application/json",
+                    "Idempotency-Key": f"document:{document_id}",
+                },
+                json={
+                    "destination_url": long_url,
+                    "external_reference": f"document:{document_id}",
+                    "title": "Q3 Handover Pack",
+                },
+                timeout=10,
+            )
+
+            if not response.ok:
+                error = response.json().get("error", {})
+                raise RuntimeError(f"ShortURL {error.get('code')}: {error.get('message')}")
+
+            short_url = response.json()["data"]["short_url"]
+
+  /links/by-reference/{externalReference}:
+    get:
+      operationId: getLinkByExternalReference
+      tags: [Links]
+      summary: Look up a link by external reference
+      description: |
+        Answers "have I already shortened this?" without you having to store the
+        link ID. The reference is the value you passed as `external_reference`
+        when creating the link, and it is unique within the workspace.
+
+        Returns 404 when no link in the workspace carries that reference.
+
+        The reference is a single path segment, so URL-encode it — a reference
+        like `document:0198c7e2` is fine, one containing `/` must be
+        percent-encoded as `%2F`.
+
+        **Required scope:** `links:read`
+      parameters:
+        - name: externalReference
+          in: path
+          required: true
+          description: The caller-owned reference, URL-encoded.
+          schema:
+            type: string
+            maxLength: 255
+          example: "invoice:12345"
+      responses:
+        "200":
+          $ref: "#/components/responses/LinkOK"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /links/{linkId}:
+    parameters:
+      - $ref: "#/components/parameters/LinkId"
+
+    get:
+      operationId: getLink
+      tags: [Links]
+      summary: Read a link
+      description: |
+        Returns one link from the API key's workspace. A link belonging to
+        another workspace, and a link that does not exist, are both 404 — the
+        API never confirms that an ID exists elsewhere.
+
+        **Required scope:** `links:read`
+      responses:
+        "200":
+          $ref: "#/components/responses/LinkOK"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: updateLink
+      tags: [Links]
+      summary: Update a link
+      description: |
+        A partial update. Only the fields you send are touched.
+
+        Five fields are nullable and distinguish "leave it alone" from "clear
+        it": `title`, `expires_at`, `max_clicks`, `password`, and `metadata`.
+        Omit the key to leave the current value; send an explicit `null` to
+        clear it. Sending `"password": null` removes the password gate;
+        `"password": ""` also removes it.
+
+        Changing `slug`, `domain`, or `domain_id` moves the link: the old short
+        URL stops working immediately and the redirect cache entry for the old
+        location is invalidated. Anything already shared under the old URL
+        breaks. `external_reference` cannot be changed after creation.
+
+        Setting `"status": "disabled"` is the recoverable way to retire a link
+        and is exactly what `DELETE /links/{linkId}` does by default.
+
+        **Required scope:** `links:write`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLinkRequest"
+            examples:
+              retarget:
+                summary: Point an already-shared link somewhere else
+                value:
+                  destination_url: https://docs.internal.example.com/documents/0198c7e2/v2
+              disable:
+                summary: Retire without deleting
+                value:
+                  status: disabled
+              clearExpiry:
+                summary: Make a link permanent again
+                value:
+                  expires_at: null
+                  max_clicks: null
+              removePassword:
+                summary: Remove the password gate
+                value:
+                  password: null
+      responses:
+        "200":
+          $ref: "#/components/responses/LinkOK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+          description: |
+            The new slug is taken on the target domain (`slug_taken`), or the
+            target domain is not active (`domain_not_active`), or the workspace
+            has no default domain (`no_default_domain`).
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteLink
+      tags: [Links]
+      summary: Disable a link, or hard-delete it
+      description: |
+        **By default this does not delete anything.** It sets the link's status
+        to `disabled`, which is identical to `PATCH {"status": "disabled"}`. The
+        row, its click history, and its analytics all survive, and the link can
+        be brought back with `PATCH {"status": "active"}`. This is the default
+        because a mistaken DELETE from an automated system should be
+        recoverable.
+
+        A disabled link stops redirecting: visitors get a "link unavailable"
+        page rather than the destination.
+
+        Pass **`?hard=true`** — the literal string `true`, nothing else counts —
+        to delete the row permanently. That is irreversible and takes the
+        link's analytics with it. The slug becomes available for reuse.
+
+        Both forms return 204 with no body.
+
+        **Required scope:** `links:write`
+      parameters:
+        - name: hard
+          in: query
+          required: false
+          description: Set to `true` to permanently delete instead of disabling. Any other value, including `1` and `TRUE`, is treated as absent.
+          schema:
+            type: string
+            enum: ["true"]
+          example: "true"
+      responses:
+        "204":
+          description: The link was disabled, or deleted when `hard=true`. No body.
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        A workspace API key, sent as `Authorization: Bearer <key>`.
+
+        Keys look like `shr_live_` or `shr_test_` followed by 40 URL-safe
+        characters. The two prefixes behave identically on the server — the
+        marker exists so an integration can tell staging traffic from
+        production traffic in its own logs. Nothing about a `shr_test_` key is
+        sandboxed: links it creates are real links.
+
+        Issue and revoke keys in the dashboard under **API keys**
+        (`/dashboard/api-keys`); admin or owner role is required. The plaintext
+        key is shown exactly once at creation — only a lookup prefix and a
+        SHA-256 digest are stored, so a lost key must be revoked and replaced.
+
+        Revocation and expiry take effect on the next request; nothing is
+        cached. A missing, malformed, unknown, revoked, or expired key all
+        return the same 401 `unauthorized`.
+
+  parameters:
+    LinkId:
+      name: linkId
+      in: path
+      required: true
+      description: The link's UUID, from `data.id`. A value that is not a UUID returns 404, not 400.
+      schema:
+        type: string
+        format: uuid
+      example: 0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44
+
+  headers:
+    X-RateLimit-Limit:
+      description: The per-minute request allowance for this API key. Present on every response that passed authentication.
+      schema:
+        type: integer
+      example: 120
+    Retry-After:
+      description: Seconds to wait before retrying. Always 60 on this API.
+      schema:
+        type: integer
+      example: 60
+
+  schemas:
+    Link:
+      type: object
+      title: Link
+      description: A short link. This is the exact shape the dashboard sees, so the two views can never drift apart.
+      required:
+        - id
+        - short_url
+        - slug
+        - domain
+        - domain_id
+        - destination_url
+        - title
+        - status
+        - redirect_type
+        - has_password
+        - expires_at
+        - max_clicks
+        - click_count
+        - external_reference
+        - created_via
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Stable identifier. Use this for `GET`, `PATCH`, and `DELETE`.
+          examples: [0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44]
+        short_url:
+          type: string
+          format: uri
+          description: |
+            The value an integration actually shares. Always `https://` plus the
+            domain plus the slug — the API does not emit `http://` short URLs
+            even if the domain is served over plain HTTP.
+          examples: ["https://short.example.com/aB7kP2q"]
+        slug:
+          type: string
+          description: The path segment. Letters, digits, hyphens, and underscores only; at most 128 characters.
+          maxLength: 128
+          examples: [aB7kP2q]
+        domain:
+          type: string
+          description: The hostname the link lives on.
+          examples: [short.example.com]
+        domain_id:
+          type: string
+          format: uuid
+          description: UUID of that domain. This is what the `domain_id` list filter takes.
+          examples: [4b6e3c1a-9d52-4d0a-8f77-2c1e5b9a7d31]
+        destination_url:
+          type: string
+          format: uri
+          description: Where the link redirects. `http` or `https`, at most 2048 characters. Private and internal addresses are allowed on purpose — the browser makes the request, not the server.
+          examples: ["https://docs.internal.example.com/documents/0198c7e2"]
+        title:
+          type: [string, "null"]
+          description: A human label shown in the dashboard. Never shown to visitors.
+          maxLength: 255
+          examples: ["Invoice #12345"]
+        status:
+          type: string
+          enum: [active, disabled, archived]
+          description: Only `active` links redirect. `disabled` and `archived` return a "link unavailable" page.
+          examples: [active]
+        redirect_type:
+          type: integer
+          enum: [301, 302, 307, 308]
+          description: |
+            The HTTP status used for the redirect. Default 302. Prefer 302 or
+            307 unless you are certain: browsers cache 301 and 308 aggressively,
+            and a retargeted link may keep sending returning visitors to the old
+            destination long after you change it.
+          default: 302
+          examples: [302]
+        has_password:
+          type: boolean
+          description: Whether a passphrase gate is set. The passphrase itself is never returned in any form.
+          examples: [false]
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: After this instant the link stops redirecting. `null` means it never expires.
+          examples: ["2026-09-13T00:00:00Z"]
+        max_clicks:
+          type: [integer, "null"]
+          format: int64
+          description: The link stops redirecting after this many clicks. `null` means unlimited.
+          examples: [500]
+        click_count:
+          type: integer
+          format: int64
+          description: Total clicks recorded. Updated asynchronously by the analytics worker, so it can lag a moment behind reality.
+          examples: [17]
+        external_reference:
+          type: [string, "null"]
+          description: Your own stable identifier for whatever this link points at. Unique per workspace. Immutable after creation.
+          maxLength: 255
+          examples: ["invoice:12345"]
+        metadata:
+          type: object
+          description: |
+            Caller-owned JSON, stored and returned untouched. It never affects
+            routing. **This key is absent, not `null`, when no metadata is
+            stored** — do not assume it is present.
+          additionalProperties: true
+          examples:
+            - source: erp
+              document_type: invoice
+        created_via:
+          type: string
+          description: How the link was created. Links made through this API are always `api`; the dashboard writes `dashboard`.
+          examples: [api]
+        created_at:
+          type: string
+          format: date-time
+          examples: ["2026-08-15T10:02:41.117Z"]
+        updated_at:
+          type: string
+          format: date-time
+          examples: ["2026-08-15T10:02:41.117Z"]
+
+    LinkEnvelope:
+      type: object
+      title: LinkEnvelope
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/Link"
+
+    LinkList:
+      type: object
+      title: LinkList
+      description: A page of links plus its pagination cursor.
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          description: Never `null`. An empty result is `[]`.
+          items:
+            $ref: "#/components/schemas/Link"
+        meta:
+          type: object
+          required: [next_cursor]
+          properties:
+            next_cursor:
+              type: [string, "null"]
+              description: Pass back as `cursor` for the next page. `null` on the last page.
+              examples: [MjAyNi0wOC0xNFQwOToxNDoyMi44MTFafDAxOThjN2UyLTRmMWEtN2MzZC05YjIxLTVmMGEyYzhlMWQ0NA]
+            total:
+              type: integer
+              format: int64
+              description: Absent on this endpoint. The list is not counted, so there is no total.
+
+    CreateLinkRequest:
+      type: object
+      title: CreateLinkRequest
+      description: |
+        Body of `POST /links`. Unknown fields are rejected with 422 rather than
+        ignored.
+      required: [destination_url]
+      additionalProperties: false
+      properties:
+        destination_url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: |
+            Required. Must include a scheme, and the scheme must be `http` or
+            `https` — `javascript:`, `data:`, and `file:` are refused. Internal
+            and private-network destinations are allowed.
+          examples: ["https://docs.internal.example.com/documents/0198c7e2?token=eyJhbGciOi"]
+        domain:
+          type: string
+          description: |
+            Hostname of a domain in this workspace. Omit to use the workspace
+            default. Mutually exclusive with `domain_id` in practice — if both
+            are sent, `domain_id` wins and `domain` is ignored.
+          examples: [short.example.com]
+        domain_id:
+          type: string
+          format: uuid
+          description: UUID of a domain in this workspace. Takes precedence over `domain`.
+          examples: [4b6e3c1a-9d52-4d0a-8f77-2c1e5b9a7d31]
+        slug:
+          type: string
+          maxLength: 128
+          description: |
+            The path segment to use. Omit for a random 7-character slug. Letters,
+            digits, hyphens, and underscores only — no slashes or dots.
+            Application routes such as `api`, `login`, and `dashboard` are
+            reserved and rejected. Leading and trailing whitespace is trimmed;
+            a slug that is only whitespace is treated as omitted.
+          examples: [invoice-12345]
+        title:
+          type: string
+          maxLength: 255
+          description: A label for the dashboard. Not shown to visitors.
+          examples: ["Invoice #12345"]
+        redirect_type:
+          type: integer
+          enum: [301, 302, 307, 308]
+          default: 302
+          description: HTTP status for the redirect.
+          examples: [302]
+        password:
+          type: string
+          description: |
+            Sets a passphrase gate: visitors must enter it before being
+            redirected. Stored hashed and never returned. An empty string means
+            no password. This is a speed bump for casual sharing, not an
+            authorization mechanism — see the security note in the integration
+            guide.
+          examples: ["s3cret-passphrase"]
+        expires_at:
+          type: string
+          format: date-time
+          description: RFC 3339. Must be in the future at the moment of the request.
+          examples: ["2026-09-13T00:00:00Z"]
+        max_clicks:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Stop redirecting after this many clicks.
+          examples: [500]
+        external_reference:
+          type: string
+          maxLength: 255
+          description: |
+            Your own stable identifier, unique per workspace. Makes the link
+            findable later through `GET /links/by-reference/{externalReference}`
+            so you never have to store the link ID yourself. Conventionally
+            `type:id`, for example `invoice:12345` or `document:<uuid>`.
+          examples: ["invoice:12345"]
+        metadata:
+          type: object
+          additionalProperties: true
+          description: |
+            Caller-owned JSON, at most 8 KB serialised. Stored verbatim, returned
+            verbatim, and never consulted when routing a redirect. Note that the
+            server only checks that this is valid JSON within the size limit —
+            a JSON array or scalar is accepted, though an object is what the API
+            is designed for.
+          examples:
+            - source: erp
+              document_type: invoice
+              document_id: "12345"
+
+    UpdateLinkRequest:
+      type: object
+      title: UpdateLinkRequest
+      description: |
+        Body of `PATCH /links/{linkId}`. Every field is optional; omitted fields
+        are left alone. The five nullable fields accept an explicit `null` to
+        clear the stored value. Unknown fields are rejected with 422.
+
+        `external_reference` and `click_count` are not updatable.
+      additionalProperties: false
+      properties:
+        destination_url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: Retarget the link. Same rules as on create.
+          examples: ["https://docs.internal.example.com/documents/0198c7e2/v2"]
+        status:
+          type: string
+          enum: [active, disabled, archived]
+          description: Retire a link with `disabled`, restore it with `active`.
+          examples: [disabled]
+        redirect_type:
+          type: integer
+          enum: [301, 302, 307, 308]
+          examples: [307]
+        slug:
+          type: string
+          maxLength: 128
+          description: Move the link to a new path. **The old short URL stops working immediately.**
+          examples: [invoice-12345-v2]
+        domain:
+          type: string
+          description: Move the link to another domain in this workspace, by hostname. **The old short URL stops working immediately.**
+          examples: [go.example.com]
+        domain_id:
+          type: string
+          format: uuid
+          description: Move the link to another domain, by UUID. Takes precedence over `domain`.
+          examples: [4b6e3c1a-9d52-4d0a-8f77-2c1e5b9a7d31]
+        title:
+          type: [string, "null"]
+          maxLength: 255
+          description: Send `null` to clear.
+          examples: ["Invoice #12345 (revised)"]
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: Send `null` to make the link permanent. A non-null value must be in the future.
+          examples: ["2026-12-31T23:59:59Z"]
+        max_clicks:
+          type: [integer, "null"]
+          format: int64
+          minimum: 1
+          description: Send `null` to remove the click cap.
+          examples: [1000]
+        password:
+          type: [string, "null"]
+          description: Send `null` or `""` to remove the password gate. Any other string replaces it.
+          examples: ["new-passphrase"]
+        metadata:
+          type: [object, "null"]
+          additionalProperties: true
+          description: |
+            Replaces the stored metadata wholesale — this is not a merge. Send
+            `null` to clear it. At most 8 KB.
+          examples:
+            - source: erp
+              revision: 2
+
+    Error:
+      type: object
+      title: Error
+      description: |
+        The shape of every failure. `code` is stable and machine-readable;
+        branch on it rather than on `message`.
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                One of: `bad_request`, `unauthorized`, `forbidden`,
+                `insufficient_scope`, `not_found`, `conflict`, `slug_taken`,
+                `external_reference_taken`, `no_default_domain`,
+                `domain_not_active`, `idempotency_conflict`,
+                `idempotency_link_gone`, `validation_error`, `rate_limited`,
+                `internal_error`.
+              examples: [validation_error]
+            message:
+              type: string
+              description: A human-readable explanation. May change between releases.
+              examples: [The request is invalid]
+            fields:
+              type: object
+              description: Present only on `validation_error`. Maps a field name to its list of problems.
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+              examples:
+                - destination_url: ["must include a scheme, for example https://"]
+            request_id:
+              type: string
+              description: Correlates with the server log line for this request. Quote it when reporting a problem.
+              examples: [3f9a1c2e]
+
+  responses:
+    LinkOK:
+      description: The link.
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LinkEnvelope"
+          example:
+            data:
+              id: 0198c7e2-4f1a-7c3d-9b21-5f0a2c8e1d44
+              short_url: https://short.example.com/invoice-12345
+              slug: invoice-12345
+              domain: short.example.com
+              domain_id: 4b6e3c1a-9d52-4d0a-8f77-2c1e5b9a7d31
+              destination_url: https://erp.internal.example.com/invoices/12345
+              title: "Invoice #12345"
+              status: active
+              redirect_type: 302
+              has_password: false
+              expires_at: "2026-09-13T00:00:00Z"
+              max_clicks: null
+              click_count: 17
+              external_reference: "invoice:12345"
+              metadata:
+                source: erp
+                document_type: invoice
+              created_via: api
+              created_at: "2026-08-14T09:14:22.811Z"
+              updated_at: "2026-08-15T11:20:03.402Z"
+
+    BadRequest:
+      description: |
+        The request was malformed before validation could run: a body that is
+        not valid JSON, an empty body, a `Content-Type` other than
+        `application/json`, a body over 1 MB, an unparseable cursor or
+        timestamp, a `domain_id` that is not a UUID, or an `Idempotency-Key`
+        over 255 characters.
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: bad_request
+              message: Request body is not valid JSON
+              request_id: 3f9a1c2e
+
+    Unauthorized:
+      description: |
+        The API key was missing, malformed, unknown, revoked, or expired. All
+        five look identical from outside on purpose. This response does **not**
+        carry `X-RateLimit-Limit`, because authentication runs before the
+        rate limiter.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: unauthorized
+              message: Authentication required
+              request_id: 3f9a1c2e
+
+    Forbidden:
+      description: |
+        The key authenticated but is not allowed to do this. Almost always
+        `insufficient_scope` — the key was issued without the `links:read` or
+        `links:write` scope the operation needs. Issue a new key with the right
+        scopes; scopes cannot be widened after creation.
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: insufficient_scope
+              message: This API key does not have the links:write scope
+              request_id: 3f9a1c2e
+
+    NotFound:
+      description: |
+        No such link in this API key's workspace. A link that exists in another
+        workspace, and a `linkId` that is not even a valid UUID, both land here.
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: not_found
+              message: Resource not found
+              request_id: 3f9a1c2e
+
+    Conflict:
+      description: The request conflicts with existing state. Branch on `error.code`.
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: slug_taken
+              message: That slug is already in use on this domain
+              request_id: 3f9a1c2e
+
+    ValidationError:
+      description: |
+        The request parsed but failed field validation. `error.fields` names
+        every offending field. An unknown JSON field lands here too, reported as
+        `"unknown field"`.
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            badFields:
+              summary: Several fields at once
+              value:
+                error:
+                  code: validation_error
+                  message: The request is invalid
+                  fields:
+                    destination_url: ["must use the http or https scheme"]
+                    expires_at: ["must be in the future"]
+                    slug: ["may only contain letters, digits, hyphens, and underscores"]
+                  request_id: 3f9a1c2e
+            unknownField:
+              summary: A typo in the payload
+              value:
+                error:
+                  code: validation_error
+                  message: The request is invalid
+                  fields:
+                    destinaton_url: ["unknown field"]
+                  request_id: 3f9a1c2e
+
+    RateLimited:
+      description: |
+        The API key exceeded its per-minute allowance (120 by default). Wait
+        `Retry-After` seconds and retry. Nothing was created or changed.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/Retry-After"
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: rate_limited
+              message: Too many requests
+              request_id: 3f9a1c2e
+
+    InternalError:
+      description: |
+        Something failed on the server. The body deliberately carries no detail
+        beyond `request_id` — quote that to whoever runs the installation, and
+        they can find the matching log line. Safe to retry, and safe to retry
+        idempotently if you sent an `Idempotency-Key`.
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: internal_error
+              message: An unexpected error occurred
+              request_id: 3f9a1c2e

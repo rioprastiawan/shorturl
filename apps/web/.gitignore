@@ -1,0 +1,20 @@
+# Nuxt / Bun artifacts. The root .gitignore already covers these repo-wide;
+# this file keeps apps/web self-contained if it is ever built or moved on its
+# own, and matches what `nuxi init` scaffolds.
+
+node_modules/
+.nuxt/
+.output/
+.data/
+.nitro/
+.cache/
+# No trailing slash: `nuxt generate` leaves `dist` as a symlink to
+# .output/public, and `dist/` would only match a real directory.
+dist
+
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store

@@ -1,0 +1,33 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Backups contain .env and TLS private keys.
+backups/
+*.tar.gz
+
+# Go
+apps/server/bin/
+*.test
+coverage.out
+
+# Node / Nuxt
+node_modules/
+.nuxt/
+.output/
+.data/
+.nitro/
+.cache/
+# No trailing slash: `nuxt generate` leaves `dist` as a symlink to
+# .output/public, and `dist/` would only match a real directory.
+dist
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log

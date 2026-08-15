@@ -1,0 +1,34 @@
+# The build context is the repository root for every image, so keeping this
+# tight matters: apps/web/node_modules alone is ~230 MB.
+
+.git/
+.gitignore
+
+**/node_modules/
+**/.nuxt/
+**/.output/
+**/.data/
+**/.nitro/
+**/.cache/
+# No trailing slash: `nuxt generate` leaves `dist` as a symlink.
+**/dist
+
+apps/server/bin/
+**/*.test
+coverage.out
+
+.env
+.env.*
+!.env.example
+
+**/.DS_Store
+**/*.log
+.idea/
+.vscode/
+
+# Not needed inside any image.
+docker-compose*.yml
+README.md
+shorturl-selfhost-plan.md
+Makefile
+scripts/

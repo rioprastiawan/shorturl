@@ -1,0 +1,288 @@
+# Production stack. Everything needed to run ShortURL lives in this one file.
+#
+#   cp .env.example .env
+#   ./scripts/install.sh      # generates secrets, checks prerequisites
+#   docker compose up -d
+#
+# All state lives in named volumes, so moving to another server is: back up,
+# copy, restore. See scripts/backup.sh and the Deployment section of README.md.
+#
+name: shorturl
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # --- Edge -------------------------------------------------------------------
+  traefik:
+    image: traefik:v3.6
+    restart: unless-stopped
+    command:
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+      # Enables the /ping handler the container healthcheck below calls.
+      - --ping=true
+      - --log.level=${TRAEFIK_LOG_LEVEL:-INFO}
+      - --log.format=json
+      - --accesslog=true
+      - --accesslog.format=json
+      # Successful requests are already logged by the Go server with request
+      # IDs; logging only errors here keeps the volume manageable.
+      - --accesslog.filters.statuscodes=400-599
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.web.http.redirections.entrypoint.permanent=true
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls.certresolver=letsencrypt
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=shorturl_edge
+      # Watched directory for verified custom domains. Adding one must not
+      # require editing this file or restarting a container.
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_ACME_EMAIL:?set TRAEFIK_ACME_EMAIL in .env}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.letsencrypt.acme.caserver=${ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Read-only: Traefik only needs to watch container events. It still grants
+      # effective root on the host, so do not run untrusted images alongside it.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_acme:/letsencrypt
+      # Written by the server when a custom domain passes verification, read
+      # only here. Traefik reloads on change, so a new domain starts serving
+      # without editing this file or restarting anything.
+      - traefik_dynamic:/etc/traefik/dynamic:ro
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *default-logging
+
+  # --- Schema -----------------------------------------------------------------
+  # One-shot. Runs to completion before server and worker start, so several
+  # containers can never race each other applying the same migration
+  # (plan §42). A failure here stops the deploy instead of crash-looping.
+  migrate:
+    image: ${SERVER_IMAGE:-shorturl/server:local}
+    build:
+      context: .
+      dockerfile: docker/server/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-shorturl}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-shorturl}?sslmode=disable}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    logging: *default-logging
+
+  # --- Application ------------------------------------------------------------
+  server:
+    image: ${SERVER_IMAGE:-shorturl/server:local}
+    build:
+      context: .
+      dockerfile: docker/server/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_NAME: ${APP_NAME:-ShortURL}
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env}
+      APP_URL: ${APP_URL:-https://${APP_DOMAIN}}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SERVER_PORT: 8080
+      # Composed from the parts below so rotating POSTGRES_PASSWORD cannot leave
+      # a stale copy behind. Override DATABASE_URL to use an external database.
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-shorturl}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-shorturl}?sslmode=disable}
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      IP_HASH_SECRET: ${IP_HASH_SECRET:?set IP_HASH_SECRET in .env}
+      TRAEFIK_DYNAMIC_DIR: /etc/shorturl/traefik-dynamic
+      TRAEFIK_CERT_RESOLVER: letsencrypt
+      RATE_LIMIT_AUTH_PER_MINUTE: ${RATE_LIMIT_AUTH_PER_MINUTE:-10}
+      RATE_LIMIT_API_PER_MINUTE: ${RATE_LIMIT_API_PER_MINUTE:-120}
+      RATE_LIMIT_REDIRECT_PER_MINUTE: ${RATE_LIMIT_REDIRECT_PER_MINUTE:-600}
+      CACHE_TTL_MINUTES: ${CACHE_TTL_MINUTES:-60}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+    volumes:
+      - traefik_dynamic:/etc/shorturl/traefik-dynamic
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - edge
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=shorturl_edge
+      - traefik.http.services.shorturl-server.loadbalancer.server.port=8080
+      # The API on the main application domain. Higher priority than the
+      # dashboard router so /api never falls through to the SPA.
+      - traefik.http.routers.shorturl-api.rule=Host(`${APP_DOMAIN}`) && PathPrefix(`/api`)
+      - traefik.http.routers.shorturl-api.entrypoints=websecure
+      - traefik.http.routers.shorturl-api.priority=100
+      - traefik.http.routers.shorturl-api.service=shorturl-server
+      - traefik.http.routers.shorturl-api.tls.certresolver=letsencrypt
+    healthcheck:
+      # The image is distroless: no shell, no curl. The binary probes itself.
+      test: ["CMD", "/app/shorturl", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+  # Drains the Redis click stream into PostgreSQL and maintains the analytics
+  # rollups. Same image as the server, different command (plan §19, §41), so
+  # there is one thing to build, tag, and push.
+  worker:
+    image: ${SERVER_IMAGE:-shorturl/server:local}
+    build:
+      context: .
+      dockerfile: docker/server/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    command: ["worker"]
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-shorturl}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-shorturl}?sslmode=disable}
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      # No SESSION_SECRET or IP_HASH_SECRET here on purpose: the worker only
+      # persists events the server already anonymised, so it never needs the
+      # signing keys and does not get a copy of them.
+      CLICK_RETENTION_DAYS: ${CLICK_RETENTION_DAYS:-400}
+      CLICK_BATCH_SIZE: ${CLICK_BATCH_SIZE:-256}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    logging: *default-logging
+
+  web:
+    image: ${WEB_IMAGE:-shorturl/web:local}
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+      args:
+        NUXT_PUBLIC_API_BASE_URL: ${NUXT_PUBLIC_API_BASE_URL:-/api/v1}
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - edge
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=shorturl_edge
+      - traefik.http.services.shorturl-web.loadbalancer.server.port=8080
+      - traefik.http.routers.shorturl-web.rule=Host(`${APP_DOMAIN}`)
+      - traefik.http.routers.shorturl-web.entrypoints=websecure
+      - traefik.http.routers.shorturl-web.priority=1
+      - traefik.http.routers.shorturl-web.service=shorturl-web
+      - traefik.http.routers.shorturl-web.tls.certresolver=letsencrypt
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+  # --- Data -------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shorturl}
+      POSTGRES_USER: ${POSTGRES_USER:-shorturl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Keeps pg_dump/pg_restore behaviour predictable across host locales.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # No `ports:` on purpose. Reachable only from the internal network.
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shorturl} -d ${POSTGRES_DB:-shorturl}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # AOF is on because click events queue in Redis Streams before the analytics
+    # worker drains them; without it, a restart silently drops pending events.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *default-logging
+
+networks:
+  # Traefik-facing. Named explicitly because the Traefik labels reference it.
+  edge:
+    name: shorturl_edge
+  # internal: true removes the default gateway, so Postgres and Redis have no
+  # route to or from the outside world at all.
+  internal:
+    name: shorturl_internal
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  traefik_acme:
+  # Shared: the server writes verified custom-domain routers, Traefik reads.
+  traefik_dynamic:

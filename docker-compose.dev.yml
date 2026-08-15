@@ -1,0 +1,50 @@
+# Development stack: infrastructure only.
+#
+# The Go server and the Nuxt dashboard run on the host during development so
+# they keep fast rebuilds and debugger access. Production Dockerfiles and the
+# full docker-compose.yml (server, worker, web, traefik) arrive in Milestone 11.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#
+name: shorturl-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shorturl}
+      POSTGRES_USER: ${POSTGRES_USER:-shorturl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shorturl}
+    ports:
+      # Bound to loopback: reachable from the host toolchain, not from the LAN.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shorturl} -d ${POSTGRES_DB:-shorturl}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # AOF is on because click events queue in Redis Streams before the worker
+    # drains them; without persistence a restart drops pending analytics.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  postgres_data:
+  redis_data:

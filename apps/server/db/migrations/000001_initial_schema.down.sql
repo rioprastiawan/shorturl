@@ -1,0 +1,13 @@
+DROP TABLE IF EXISTS app_settings;
+DROP TABLE IF EXISTS idempotency_keys;
+DROP TABLE IF EXISTS api_keys;
+DROP TABLE IF EXISTS click_dimension_daily;
+DROP TABLE IF EXISTS click_hourly;
+DROP TABLE IF EXISTS click_events;
+DROP TABLE IF EXISTS links;
+DROP TABLE IF EXISTS domains;
+DROP TABLE IF EXISTS workspace_members;
+DROP TABLE IF EXISTS workspaces;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS users;
+DROP FUNCTION IF EXISTS set_updated_at();
