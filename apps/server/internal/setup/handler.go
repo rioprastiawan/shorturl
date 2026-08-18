@@ -26,6 +26,10 @@ type statusDTO struct {
 	RegistrationEnabled bool   `json:"registration_enabled"`
 }
 
+type indexingDTO struct {
+	Enabled bool `json:"enabled"`
+}
+
 type completeDTO struct {
 	User      auth.UserDTO  `json:"user"`
 	Workspace workspace.DTO `json:"workspace"`
@@ -45,6 +49,53 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/setup/status", h.status)
 	r.Post("/setup", h.complete)
+	r.Get("/system/indexing", h.indexing)
+}
+
+func (h *Handler) AdminRoutes(r chi.Router) {
+	r.Put("/indexing", h.updateIndexing)
+}
+
+func (h *Handler) Robots(w http.ResponseWriter, r *http.Request) {
+	enabled, err := h.svc.SearchIndexing(r.Context())
+	if err != nil {
+		http.Error(w, "could not read crawler policy", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	if enabled {
+		_, _ = w.Write([]byte("User-agent: *\nAllow: /\n"))
+		return
+	}
+	w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
+	_, _ = w.Write([]byte("User-agent: *\nDisallow: /\n"))
+}
+
+func (h *Handler) indexing(w http.ResponseWriter, r *http.Request) {
+	enabled, err := h.svc.SearchIndexing(r.Context())
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.Data(w, http.StatusOK, indexingDTO{Enabled: enabled})
+}
+
+func (h *Handler) updateIndexing(w http.ResponseWriter, r *http.Request) {
+	if !authctx.MustUser(r.Context()).IsAdmin {
+		httpx.Error(w, r, httpx.ErrForbidden)
+		return
+	}
+	var req indexingDTO
+	if err := httpx.Decode(w, r, &req); err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	if err := h.svc.SetSearchIndexing(r.Context(), req.Enabled); err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.Data(w, http.StatusOK, req)
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {

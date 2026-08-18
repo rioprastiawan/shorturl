@@ -12,6 +12,23 @@ const latestVersion = ref<string | null>(null)
 const latestReleaseUrl = ref('https://github.com/rioprastiawan/shorturl/releases')
 const installation = ref<SetupStatus | null>(null)
 const checking = ref(true)
+const indexingEnabled = ref(false)
+const indexingSaving = ref(false)
+const indexingLoaded = ref(false)
+const toast = useToast()
+
+async function saveIndexing() {
+  indexingSaving.value = true
+  try {
+    const result = await setup.updateIndexing(indexingEnabled.value)
+    indexingEnabled.value = result.enabled
+    toast.success('Search engine preference saved')
+  } catch {
+    toast.error('Could not save the search engine preference.')
+  } finally {
+    indexingSaving.value = false
+  }
+}
 
 function semver(value: string): [number, number, number] | null {
   const match = /(?:^|v)(\d+)\.(\d+)\.(\d+)/.exec(value)
@@ -29,10 +46,11 @@ const updateAvailable = computed(() => {
 })
 
 onMounted(async () => {
-  const [health, release, setupStatus] = await Promise.allSettled([
+  const [health, release, setupStatus, indexing] = await Promise.allSettled([
     $fetch<{ version: string }>('/api/v1/system/version'),
     $fetch<{ tag_name: string, html_url: string }>('https://api.github.com/repos/rioprastiawan/shorturl/releases/latest'),
     setup.status(),
+    setup.indexing(),
   ])
   if (health.status === 'fulfilled') serverVersion.value = health.value.version
   if (release.status === 'fulfilled') {
@@ -40,6 +58,10 @@ onMounted(async () => {
     latestReleaseUrl.value = release.value.html_url
   }
   if (setupStatus.status === 'fulfilled') installation.value = setupStatus.value
+  if (indexing.status === 'fulfilled') {
+    indexingEnabled.value = indexing.value.enabled
+    indexingLoaded.value = true
+  }
   checking.value = false
 })
 </script>
@@ -65,6 +87,23 @@ onMounted(async () => {
       </div>
       <div v-else-if="checking" class="flex items-center gap-3"><UiSkeleton height="2.5rem" width="2.5rem" rounded="lg" /><div class="flex-1 space-y-2"><UiSkeleton width="9rem" /><UiSkeleton height="0.65rem" width="70%" /></div></div>
       <p v-else class="text-sm text-(--color-content-muted)">Installation profile is unavailable.</p>
+    </UiCard>
+
+    <UiCard title="Search engine indexing" description="Control whether search engines may crawl and index this entire installation.">
+      <div v-if="indexingLoaded" class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-(--color-border) bg-(--color-surface-muted)/45 p-4">
+        <div class="max-w-2xl">
+          <p class="text-sm font-semibold">Allow search engine indexing</p>
+          <p class="mt-1 text-sm text-(--color-content-muted)">
+            When disabled, robots.txt blocks all crawlers and dashboard pages publish a noindex directive. Changes can take time to be reflected by search engines.
+          </p>
+        </div>
+        <div class="flex items-center gap-3">
+          <UiBadge :tone="indexingEnabled ? 'success' : 'neutral'" dot>{{ indexingEnabled ? 'Indexable' : 'Noindex' }}</UiBadge>
+          <UiCheckbox v-model="indexingEnabled" :disabled="indexingSaving">Allow indexing</UiCheckbox>
+          <UiButton size="sm" :loading="indexingSaving" @click="saveIndexing">Save</UiButton>
+        </div>
+      </div>
+      <UiSkeleton v-else height="5rem" rounded="lg" />
     </UiCard>
 
     <UiCard title="Updates" description="Compare this installation with the latest published release.">

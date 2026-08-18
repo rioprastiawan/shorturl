@@ -49,6 +49,8 @@ export function useServices() {
 
   const setup = {
     status: () => api.get<SetupStatus>('/setup/status'),
+    indexing: () => api.get<{ enabled: boolean }>('/system/indexing'),
+    updateIndexing: (enabled: boolean) => api.put<{ enabled: boolean }>('/system/indexing', { enabled }),
     complete: (body: {
       name: string
       email: string

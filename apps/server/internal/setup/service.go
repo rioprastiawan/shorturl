@@ -28,6 +28,7 @@ import (
 // SettingKey is the app_settings row that records a finished wizard.
 const SettingKey = "setup_completed"
 const DeploymentModeKey = "deployment_mode"
+const SearchIndexingKey = "search_indexing_enabled"
 
 const (
 	ModeInternal = "internal"
@@ -168,6 +169,12 @@ func (s *Service) Complete(ctx context.Context, name, email, password, workspace
 	if _, err := qtx.SetSetting(ctx, store.SetSettingParams{Key: DeploymentModeKey, Value: modeJSON}); err != nil {
 		return nil, nil, "", noTime, httpx.Internal(err)
 	}
+	// Internal installations default to private; public/SaaS installations
+	// default to discoverable. The administrator can override this later.
+	indexingJSON, _ := json.Marshal(deploymentMode == ModePublic)
+	if _, err := qtx.SetSetting(ctx, store.SetSettingParams{Key: SearchIndexingKey, Value: indexingJSON}); err != nil {
+		return nil, nil, "", noTime, httpx.Internal(err)
+	}
 
 	if _, err := qtx.CreateSession(ctx, store.CreateSessionParams{
 		UserID:    user.ID,
@@ -182,6 +189,34 @@ func (s *Service) Complete(ctx context.Context, name, email, password, workspace
 	}
 
 	return &user, &ws, token, expiresAt, nil
+}
+
+// SearchIndexing reports whether crawlers may index this installation. Older
+// installations derive their default from deployment mode until explicitly
+// saved, preserving the same internal/private and public/SaaS semantics.
+func (s *Service) SearchIndexing(ctx context.Context) (bool, error) {
+	setting, err := s.q.GetSetting(ctx, SearchIndexingKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		mode, modeErr := s.DeploymentMode(ctx)
+		return mode == ModePublic, modeErr
+	}
+	if err != nil {
+		return false, httpx.Internal(err)
+	}
+	var enabled bool
+	if json.Unmarshal(setting.Value, &enabled) != nil {
+		return false, nil
+	}
+	return enabled, nil
+}
+
+func (s *Service) SetSearchIndexing(ctx context.Context, enabled bool) error {
+	raw, _ := json.Marshal(enabled)
+	_, err := s.q.SetSetting(ctx, store.SetSettingParams{Key: SearchIndexingKey, Value: raw})
+	if err != nil {
+		return httpx.Internal(err)
+	}
+	return nil
 }
 
 // DeploymentMode returns the selected setup mode. Existing installations

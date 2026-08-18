@@ -6,7 +6,9 @@
 # The dashboard is an SPA (ssr: false), so the build produces plain static
 # files and the runtime image is nginx rather than a Node or Bun process.
 
-FROM oven/bun:1.3-alpine AS build
+# The generated SPA is architecture-independent, so build it natively once
+# instead of running Bun under QEMU for the arm64 image.
+FROM --platform=$BUILDPLATFORM oven/bun:1.3-alpine AS build
 
 WORKDIR /src
 

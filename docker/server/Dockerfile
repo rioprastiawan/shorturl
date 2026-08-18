@@ -3,7 +3,10 @@
 # Go server image. Build context is the repository root:
 #   docker build -f docker/server/Dockerfile .
 
-FROM golang:1.26-alpine AS build
+# Always run the Go compiler for the runner's native architecture. Buildx may
+# still produce an arm64 runtime image, but Go cross-compiles that binary
+# directly instead of running the arm64 compiler through slow QEMU emulation.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 
 WORKDIR /src
 
@@ -18,11 +21,13 @@ COPY apps/server/ ./
 RUN mkdir -p /out/traefik-dynamic
 
 ARG VERSION=dev
+ARG TARGETOS
+ARG TARGETARCH
 # CGO off produces a static binary that runs on distroless/static.
 # timetzdata embeds the zone database, which the scratch-like base lacks.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
       -trimpath \
       -tags timetzdata \
       -ldflags "-s -w -X main.version=${VERSION}" \

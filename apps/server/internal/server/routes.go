@@ -46,6 +46,8 @@ func (s *Server) routes(version string) http.Handler {
 	r.Get("/ready", s.readyHandler())
 
 	if s.app != nil {
+		setupHandler := setup.NewHandler(s.app.Setup)
+		r.Get("/robots.txt", setupHandler.Robots)
 		r.Route("/api/v1", func(r chi.Router) {
 			// The API is reachable only on the application domain. A verified
 			// custom domain points at this same container, and exposing the
@@ -96,6 +98,7 @@ func (s *Server) mountAPI(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAuth(app.Auth))
 			brandingHandler.AdminRoutes(r)
+			setupHandler.AdminRoutes(r)
 		})
 	})
 
