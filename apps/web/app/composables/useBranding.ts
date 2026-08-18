@@ -64,7 +64,21 @@ export function useBrandingEffects() {
   watch([branding, () => colorMode.value, activeCustomTheme], () => {
     if (!activeCustomTheme.value) applyColors()
   }, { deep: true })
-  onMounted(() => load())
+
+  // useCustomThemes() runs its own onMounted(initialize) in app.vue just
+  // before this one, and when no custom theme is active it explicitly
+  // removeProperty()s the very CSS variables applyColors() sets — they
+  // share the same --color-accent/--color-shell/etc. names by design, so
+  // whichever one runs last wins. branding.global.ts already resolves
+  // load() before this component ever mounts, so `await load()` here is
+  // usually a no-op (loaded.value is already true) and applyColors() would
+  // never rerun to restore what custom-theme init just cleared. Calling it
+  // unconditionally after the await guarantees branding colours are always
+  // the last write on mount, regardless of which path actually fetched.
+  onMounted(async () => {
+    await load()
+    applyColors()
+  })
 
   useHead(() => ({
     titleTemplate: title => title ? title.replaceAll('ShortURL', branding.value.app_name) : branding.value.app_name,
