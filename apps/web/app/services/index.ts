@@ -144,6 +144,22 @@ export function useServices() {
       metadata?: Record<string, unknown>
     }) => api.post<Link>(`/workspaces/${workspaceId}/links`, body),
 
+    bulkCreate: (workspaceId: string, items: Array<{
+      destination_url: string
+      domain_id?: string
+      domain?: string
+      slug?: string
+      title?: string
+      redirect_type?: number
+      expires_at?: string
+      max_clicks?: number
+      external_reference?: string
+      metadata?: Record<string, unknown>
+      status?: string
+    }>) => api.post<{ created: Link[], failed: Array<{ index: number, code: string, message: string }> }>(
+      `/workspaces/${workspaceId}/links/bulk`, { links: items },
+    ),
+
     preview: (workspaceId: string, destinationUrl: string) =>
       api.post<PagePreview>(`/workspaces/${workspaceId}/links/preview`, {
         destination_url: destinationUrl,

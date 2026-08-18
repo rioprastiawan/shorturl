@@ -217,6 +217,33 @@ async function readImportFile(file: File) {
   }
 }
 
+const IMPORT_BATCH_SIZE = 1000
+
+function buildImportItem(row: ImportRow) {
+  const value = row.values
+  const hostname = value.domain ?? ''
+  const selectedDomain = hostname
+    ? domainOptions.value.find(domain => domain.hostname.toLowerCase() === hostname.toLowerCase())
+    : undefined
+  const tags = (value.tags ?? '').split('|').map(tag => tag.trim().toLowerCase()).filter(Boolean)
+  const metadata: Record<string, unknown> = {}
+  if (tags.length) metadata.tags = [...new Set(tags)].slice(0, 8)
+  if (value.notes) metadata.notes = value.notes
+
+  return {
+    destination_url: value.destination_url!,
+    domain_id: selectedDomain?.id,
+    slug: value.slug || undefined,
+    title: value.title || undefined,
+    status: value.status || undefined,
+    redirect_type: value.redirect_type ? Number(value.redirect_type) : undefined,
+    expires_at: value.expires_at ? new Date(value.expires_at).toISOString() : undefined,
+    max_clicks: value.max_clicks ? Number(value.max_clicks) : undefined,
+    external_reference: value.external_reference || undefined,
+    metadata: Object.keys(metadata).length ? metadata : undefined,
+  }
+}
+
 async function runImport() {
   const workspaceId = ws.activeId.value
   if (!workspaceId || importing.value || !validImportRows.value.length) return
@@ -224,35 +251,19 @@ async function runImport() {
   importedCount.value = 0
   importFailures.value = importRows.value.filter(row => row.error).map(row => ({ line: row.line, message: row.error! }))
 
-  for (const row of validImportRows.value) {
-    const value = row.values
-    const hostname = value.domain ?? ''
-    const selectedDomain = hostname
-      ? domainOptions.value.find(domain => domain.hostname.toLowerCase() === hostname.toLowerCase())
-      : undefined
-    const tags = (value.tags ?? '').split('|').map(tag => tag.trim().toLowerCase()).filter(Boolean)
-    const metadata: Record<string, unknown> = {}
-    if (tags.length) metadata.tags = [...new Set(tags)].slice(0, 8)
-    if (value.notes) metadata.notes = value.notes
-
+  const rows = validImportRows.value
+  for (let start = 0; start < rows.length; start += IMPORT_BATCH_SIZE) {
+    const batch = rows.slice(start, start + IMPORT_BATCH_SIZE)
     try {
-      const created = await links.create(workspaceId, {
-        destination_url: value.destination_url!,
-        domain_id: selectedDomain?.id,
-        slug: value.slug || undefined,
-        title: value.title || undefined,
-        redirect_type: value.redirect_type ? Number(value.redirect_type) : undefined,
-        expires_at: value.expires_at ? new Date(value.expires_at).toISOString() : undefined,
-        max_clicks: value.max_clicks ? Number(value.max_clicks) : undefined,
-        external_reference: value.external_reference || undefined,
-        metadata: Object.keys(metadata).length ? metadata : undefined,
-      })
-      if (value.status && value.status !== 'active') {
-        await links.update(workspaceId, created.id, { status: value.status })
+      const result = await links.bulkCreate(workspaceId, batch.map(buildImportItem))
+      importedCount.value += result.created.length
+      for (const failure of result.failed) {
+        importFailures.value.push({ line: batch[failure.index]!.line, message: failure.message })
       }
-      importedCount.value++
     } catch (error) {
-      importFailures.value.push({ line: row.line, message: error instanceof ApiError ? error.message : 'Could not create link' })
+      for (const row of batch) {
+        importFailures.value.push({ line: row.line, message: error instanceof ApiError ? error.message : 'Could not create link' })
+      }
     }
   }
 

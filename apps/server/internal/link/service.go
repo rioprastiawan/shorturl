@@ -113,7 +113,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (View, error) {
 	// or a client that skipped that request. API integrations are not made to
 	// wait on third-party websites and can continue supplying their own metadata.
 	preview, hasPreview := previewFromMetadata(in.Metadata)
-	if in.CreatedVia != "api" && !hasPreview {
+	if in.CreatedVia != "api" && in.CreatedVia != CreatedViaImport && !hasPreview {
 		fetched, fetchErr := FetchPageMetadata(ctx, destination)
 		if fetchErr != nil {
 			s.logger.Warn("could not fetch link metadata", slog.String("url", destination), slog.String("error", fetchErr.Error()))

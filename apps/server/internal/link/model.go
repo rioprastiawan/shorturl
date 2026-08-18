@@ -141,6 +141,31 @@ type ListInput struct {
 	Cursor            string
 }
 
+// MaxBulkLinks bounds a single bulk-create request. It's small enough that a
+// batch finishes well inside the route's timeout even on a slow database.
+const MaxBulkLinks = 1000
+
+// CreatedViaImport marks links created through the CSV bulk importer, so
+// Create skips the live metadata fetch it does for interactive dashboard
+// submissions (plan §14.2's "dashboard" fallback isn't useful for
+// historical data, and would be the dominant per-row cost otherwise).
+const CreatedViaImport = "import"
+
+// BulkResult reports per-row outcomes for a bulk-create request: unlike a
+// single create, one bad row must not fail the rest of the batch.
+type BulkResult struct {
+	Created []DTO         `json:"created"`
+	Failed  []BulkFailure `json:"failed"`
+}
+
+// BulkFailure ties a failure back to its position in the request payload so
+// the caller can map it back to, e.g., a CSV line number.
+type BulkFailure struct {
+	Index   int    `json:"index"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 type AuditEntry struct {
 	ID          uuid.UUID       `json:"id"`
 	Action      string          `json:"action"`

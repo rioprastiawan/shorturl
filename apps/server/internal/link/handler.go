@@ -2,10 +2,12 @@ package link
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
 	"github.com/rioprastiawan/shorturl/apps/server/internal/authctx"
@@ -28,6 +30,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/", h.list)
 	r.Post("/", h.create)
+	r.With(chimw.Timeout(90 * time.Second)).Post("/bulk", h.bulkCreate)
 	r.Post("/preview", h.preview)
 	r.Get("/tags", h.listTags)
 	r.Get("/audit-log", h.listAuditLog)
@@ -116,6 +119,15 @@ func (r createRequest) toInput(workspaceID uuid.UUID, createdBy *uuid.UUID, via 
 		CreatedBy:         createdBy,
 		CreatedVia:        via,
 	}
+}
+
+type bulkCreateRequest struct {
+	Links []bulkLinkRequest `json:"links"`
+}
+
+type bulkLinkRequest struct {
+	createRequest
+	Status *string `json:"status"`
 }
 
 type updateRequest struct {
@@ -267,6 +279,57 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, "link.created", "link", view.Link.ID, view.ShortURL(), nil)
 	httpx.Data(w, http.StatusCreated, ToDTO(view))
+}
+
+// bulkCreate lets the CSV importer submit many rows in one request. Each row
+// gets the same validation and slug/domain resolution as a single create, but
+// paying local DB round trips instead of one browser round trip per row is
+// what actually makes a 1,000-row import fast. One bad row does not fail the
+// rest of the batch — failures are reported per index instead.
+func (h *Handler) bulkCreate(w http.ResponseWriter, r *http.Request) {
+	m := authctx.MustMembership(r.Context())
+	if !m.Role.CanManageLinks() {
+		httpx.Error(w, r, httpx.ErrForbidden)
+		return
+	}
+
+	var req bulkCreateRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	if len(req.Links) == 0 {
+		httpx.Error(w, r, httpx.BadRequest("links must contain at least one item"))
+		return
+	}
+	if len(req.Links) > MaxBulkLinks {
+		httpx.Error(w, r, httpx.BadRequest(fmt.Sprintf("a single request is limited to %d links", MaxBulkLinks)))
+		return
+	}
+
+	user := authctx.MustUser(r.Context())
+	result := BulkResult{Created: make([]DTO, 0, len(req.Links)), Failed: make([]BulkFailure, 0)}
+
+	for i, item := range req.Links {
+		in := item.createRequest.toInput(m.WorkspaceID, &user.ID, CreatedViaImport)
+		view, err := h.svc.Create(r.Context(), in)
+		if err != nil {
+			apiErr := httpx.AsAPIError(err)
+			result.Failed = append(result.Failed, BulkFailure{Index: i, Code: apiErr.Code, Message: apiErr.Message})
+			continue
+		}
+
+		if item.Status != nil && *item.Status != "active" {
+			if updated, err := h.svc.Update(r.Context(), m.WorkspaceID, view.Link.ID, UpdateInput{Status: item.Status}); err == nil {
+				view = updated
+			}
+		}
+
+		h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, "link.created", "link", view.Link.ID, view.ShortURL(), nil)
+		result.Created = append(result.Created, ToDTO(view))
+	}
+
+	httpx.Data(w, http.StatusOK, result)
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
