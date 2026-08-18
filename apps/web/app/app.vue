@@ -1,6 +1,6 @@
 <script setup lang="ts">
 useCustomThemes()
-useBranding()
+useBrandingEffects()
 </script>
 
 <template>

@@ -47,6 +47,20 @@ export function useBranding() {
     applyColors()
   }
 
+  return { branding, loaded, load, set, applyColors, activeCustomTheme, colorMode }
+}
+
+/**
+ * Registers branding's reactive side effects: theme colour sync and the
+ * document head. These use onMounted/watch/useHead, which need an active
+ * component instance — call this once, from app.vue, never from middleware
+ * (branding.global.ts calls plain useBranding().load() instead, since a
+ * global middleware runs on every navigation and would otherwise leak a
+ * fresh watcher on each one).
+ */
+export function useBrandingEffects() {
+  const { branding, load, applyColors, activeCustomTheme, colorMode } = useBranding()
+
   watch([branding, () => colorMode.value, activeCustomTheme], () => {
     if (!activeCustomTheme.value) applyColors()
   }, { deep: true })
@@ -57,8 +71,6 @@ export function useBranding() {
     meta: [{ name: 'application-name', content: branding.value.app_name }],
     link: branding.value.favicon_url ? [{ rel: 'icon', href: branding.value.favicon_url }] : [],
   }))
-
-  return { branding, loaded, load, set }
 }
 
 function darken(hex: string, factor = 0.58): string {
