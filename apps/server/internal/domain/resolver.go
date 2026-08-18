@@ -12,6 +12,14 @@ import (
 // connection open for the whole handler timeout.
 const lookupTimeout = 5 * time.Second
 
+// publicDNSServers are queried directly instead of the host's configured
+// resolver. A user clicks "Verify" right after publishing a DNS record and
+// expects the current answer, but the system resolver (systemd-resolved,
+// dnsmasq, a corporate stub, etc.) may hold a stale or negative answer past
+// its TTL. Cloudflare is tried first; Google is the fallback if it can't be
+// reached.
+var publicDNSServers = []string{"1.1.1.1:53", "8.8.8.8:53"}
+
 // Resolver is the slice of DNS the verifier needs. It exists so verification
 // can be tested without touching the network.
 type Resolver interface {
@@ -20,14 +28,34 @@ type Resolver interface {
 	LookupCNAME(ctx context.Context, host string) (string, error)
 }
 
-// netResolver is the production Resolver, backed by the system resolver.
+// netResolver is the production Resolver, backed by direct queries to
+// publicDNSServers rather than the system resolver.
 type netResolver struct {
 	r *net.Resolver
 }
 
-// NewResolver returns a Resolver that queries the system's configured DNS
-// servers.
-func NewResolver() Resolver { return netResolver{r: net.DefaultResolver} }
+// NewResolver returns a Resolver that queries publicDNSServers directly. It
+// forces Go's pure-Go DNS client (PreferGo) and ignores the address Go would
+// otherwise dial, which is what makes bypassing the OS resolver's cache
+// actually take effect — without PreferGo, some platforms resolve through
+// cgo/getaddrinfo instead, and Dial is never called at all.
+func NewResolver() Resolver {
+	dialer := &net.Dialer{Timeout: lookupTimeout}
+	return netResolver{r: &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var lastErr error
+			for _, server := range publicDNSServers {
+				conn, err := dialer.DialContext(ctx, network, server)
+				if err == nil {
+					return conn, nil
+				}
+				lastErr = err
+			}
+			return nil, lastErr
+		},
+	}}
+}
 
 func (n netResolver) LookupTXT(ctx context.Context, name string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, lookupTimeout)
