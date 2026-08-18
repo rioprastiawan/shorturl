@@ -5,7 +5,7 @@ import { ApiError } from '~/composables/useApi'
 import { DEFAULT_BRANDING } from '~/composables/useBranding'
 import { drawQrFinders, drawQrModule, isFinderModule } from '~/utils/qrRenderer'
 
-definePageMeta({ middleware: 'auth' })
+definePageMeta({ middleware: ['auth', 'workspace-admin'] })
 useHead({ title: 'QR Branding · ShortURL' })
 
 const session = useSession()
@@ -93,7 +93,7 @@ async function save() {
           <div class="mt-5"><UiSlider v-model="form.qr_margin" label="Quiet zone" :min="1" :max="6" suffix=" modules" hint="A larger clear area makes QR codes easier to scan in print." /></div>
           <div class="mt-4"><UiCheckbox v-model="form.qr_use_logo" :disabled="!form.logo_compact_url && !form.logo_light_url">Place the Whitelabeling logo in the center</UiCheckbox><p v-if="!form.logo_compact_url && !form.logo_light_url" class="mt-1 text-xs text-(--color-content-subtle)">Upload a compact or light logo in Whitelabeling to enable this option.</p></div>
         </UiCard>
-        <div class="flex justify-end"><UiButton type="submit" :loading="saving">Save QR branding</UiButton></div>
+        <div class="flex justify-end"><UiButton class="w-full sm:w-auto" type="submit" :loading="saving">Save QR branding</UiButton></div>
       </div>
     </form>
   </div>

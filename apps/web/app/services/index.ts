@@ -66,7 +66,7 @@ export function useServices() {
   }
 
   const workspaces = {
-    list: () => api.list<Workspace>('/workspaces'),
+    list: (query?: { search?: string, cursor?: string, limit?: number }) => api.list<Workspace>('/workspaces', query),
     create: (body: { name: string }) => api.post<Workspace>('/workspaces', body),
     createDemo: (body: { size: 'starter' | 'busy' | 'five_year' }) =>
       api.post<Workspace>('/workspaces/demo', body),
@@ -94,7 +94,8 @@ export function useServices() {
   }
 
   const domains = {
-    list: (workspaceId: string) => api.list<Domain>(`/workspaces/${workspaceId}/domains`),
+    list: (workspaceId: string, query?: { page?: number, per_page?: number }) =>
+      api.list<Domain>(`/workspaces/${workspaceId}/domains`, query),
     get: (workspaceId: string, id: string) =>
       api.get<Domain>(`/workspaces/${workspaceId}/domains/${id}`),
     create: (workspaceId: string, body: { hostname: string }) =>
@@ -103,6 +104,8 @@ export function useServices() {
       api.post<Domain>(`/workspaces/${workspaceId}/domains/${id}/verify`),
     setDefault: (workspaceId: string, id: string) =>
       api.post<Domain>(`/workspaces/${workspaceId}/domains/${id}/default`),
+    updateRootRedirect: (workspaceId: string, id: string, rootRedirectUrl: string | null) =>
+      api.patch<Domain>(`/workspaces/${workspaceId}/domains/${id}/root-redirect`, { root_redirect_url: rootRedirectUrl }),
     remove: (workspaceId: string, id: string) =>
       api.del(`/workspaces/${workspaceId}/domains/${id}`),
   }

@@ -186,7 +186,19 @@ func (s *Service) Get(ctx context.Context, workspaceID, linkID uuid.UUID) (View,
 		}
 		return View{}, httpx.Internal(err)
 	}
-	return View{Link: row.Link, Hostname: row.Hostname}, nil
+	view := View{Link: row.Link, Hostname: row.Hostname}
+	if row.Link.CreatedBy != nil {
+		var name, email string
+		if err := s.pool.QueryRow(ctx,
+			`SELECT name, email FROM users WHERE id = $1`, *row.Link.CreatedBy,
+		).Scan(&name, &email); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return View{}, httpx.Internal(err)
+		} else if err == nil {
+			view.CreatedByName = &name
+			view.CreatedByEmail = &email
+		}
+	}
+	return view, nil
 }
 
 // ListTags returns reusable tag suggestions from links in one workspace.
@@ -219,13 +231,13 @@ func (s *Service) ListTags(ctx context.Context, workspaceID uuid.UUID) ([]string
 	return tags, nil
 }
 
-func (s *Service) RecordAudit(ctx context.Context, workspaceID uuid.UUID, actorID *uuid.UUID, action string, entityID uuid.UUID, label string, details json.RawMessage) {
+func (s *Service) RecordAudit(ctx context.Context, workspaceID uuid.UUID, actorID *uuid.UUID, action, entityType string, entityID uuid.UUID, label string, details json.RawMessage) {
 	if details == nil {
 		details = json.RawMessage(`{}`)
 	}
 	if _, err := s.pool.Exec(ctx, `INSERT INTO audit_logs
 		(workspace_id, actor_user_id, action, entity_type, entity_id, entity_label, details)
-		VALUES ($1, $2, $3, 'link', $4, $5, $6)`, workspaceID, actorID, action, entityID, label, details); err != nil {
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`, workspaceID, actorID, action, entityType, entityID, label, details); err != nil {
 		s.logger.Warn("could not record audit log", slog.String("action", action), slog.String("error", err.Error()))
 	}
 }
@@ -376,7 +388,10 @@ func (s *Service) Update(ctx context.Context, workspaceID, linkID uuid.UUID, in 
 	// would keep serving the previous destination until the TTL expired.
 	s.cache.InvalidateLink(ctx, before.Hostname, before.Link.Slug, before.Link.ID)
 
-	view := View{Link: row, Hostname: targetHostname}
+	view := View{
+		Link: row, Hostname: targetHostname,
+		CreatedByName: before.CreatedByName, CreatedByEmail: before.CreatedByEmail,
+	}
 	s.warm(ctx, view)
 	return view, nil
 }
@@ -395,14 +410,15 @@ func (s *Service) Preview(ctx context.Context, rawURL string) (PageMetadata, err
 	return preview, nil
 }
 
-// Delete removes a link and its cache entry.
+// Delete disables a link immediately and queues its analytics for batched
+// cleanup. This keeps the request fast even with years of click history.
 func (s *Service) Delete(ctx context.Context, workspaceID, linkID uuid.UUID) error {
 	before, err := s.Get(ctx, workspaceID, linkID)
 	if err != nil {
 		return err
 	}
 
-	affected, err := s.q.DeleteLink(ctx, store.DeleteLinkParams{ID: linkID, WorkspaceID: workspaceID})
+	affected, err := s.q.RequestLinkDeletion(ctx, store.RequestLinkDeletionParams{LinkID: linkID, WorkspaceID: workspaceID})
 	if err != nil {
 		return httpx.Internal(err)
 	}

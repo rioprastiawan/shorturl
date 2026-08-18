@@ -77,6 +77,16 @@ func newFakeStore() *fakeStore {
 
 func (f *fakeStore) ClearDefaultDomain(context.Context, uuid.UUID) error { return nil }
 
+func (f *fakeStore) CountDomains(_ context.Context, workspaceID uuid.UUID) (int64, error) {
+	var total int64
+	for _, d := range f.domains {
+		if d.WorkspaceID == workspaceID {
+			total++
+		}
+	}
+	return total, nil
+}
+
 func (f *fakeStore) CreateDomain(_ context.Context, arg store.CreateDomainParams) (store.Domain, error) {
 	f.lastCreate = arg
 	if f.createErr != nil {
@@ -127,24 +137,40 @@ func (f *fakeStore) ListDomainHostnamesForWorkspace(context.Context, uuid.UUID) 
 	return f.hostnames, nil
 }
 
-func (f *fakeStore) ListDomains(_ context.Context, workspaceID uuid.UUID) ([]store.Domain, error) {
+func (f *fakeStore) ListDomainsPage(_ context.Context, arg store.ListDomainsPageParams) ([]store.Domain, error) {
 	var out []store.Domain
 	for _, d := range f.domains {
-		if d.WorkspaceID == workspaceID {
+		if d.WorkspaceID == arg.WorkspaceID {
 			out = append(out, d)
 		}
 	}
-	return out, nil
+	start := min(int(arg.PageOffset), len(out))
+	end := min(start+int(arg.PageLimit), len(out))
+	return out[start:end], nil
 }
 
 func (f *fakeStore) ListLinksForDomain(context.Context, uuid.UUID) ([]store.ListLinksForDomainRow, error) {
 	return f.links, nil
 }
 
+func (f *fakeStore) CountLinksForDomain(context.Context, uuid.UUID) (int64, error) {
+	return int64(len(f.links)), nil
+}
+
 func (f *fakeStore) SetDefaultDomain(_ context.Context, id uuid.UUID) (store.Domain, error) {
 	d := f.domains[id]
 	d.IsDefault = true
 	f.domains[id] = d
+	return d, nil
+}
+
+func (f *fakeStore) UpdateDomainRootRedirect(_ context.Context, arg store.UpdateDomainRootRedirectParams) (store.Domain, error) {
+	d, ok := f.domains[arg.ID]
+	if !ok || d.WorkspaceID != arg.WorkspaceID {
+		return store.Domain{}, pgx.ErrNoRows
+	}
+	d.RootRedirectUrl = arg.RootRedirectUrl
+	f.domains[arg.ID] = d
 	return d, nil
 }
 

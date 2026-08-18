@@ -9,22 +9,27 @@ const props = withDefaults(defineProps<{
   inverse: false,
 })
 
-const { workspaces, active, select, create } = useWorkspaces()
+const { workspaces, active, select, create, remember } = useWorkspaces()
+const services = useServices()
 const toast = useToast()
 
 const open = ref(false)
 const creating = ref(false)
 const newName = ref('')
 const search = ref('')
+const browseItems = ref([...workspaces.value])
+const nextCursor = ref<string | null>(null)
+const browseLoading = ref(false)
+const browseReady = ref(false)
 const busy = ref(false)
 const root = useTemplateRef<HTMLElement>('root')
 const trigger = useTemplateRef<HTMLElement>('trigger')
 const panel = useTemplateRef<HTMLElement>('panel')
 const searchInput = useTemplateRef<HTMLInputElement>('searchInput')
-const filteredWorkspaces = computed(() => {
-  const query = search.value.trim().toLocaleLowerCase()
-  if (!query) return workspaces.value
-  return workspaces.value.filter(workspace => workspace.name.toLocaleLowerCase().includes(query))
+const displayedWorkspaces = computed(() => {
+  if (search.value.trim()) return browseItems.value
+  if (!active.value) return browseItems.value
+  return [active.value, ...browseItems.value.filter(workspace => workspace.id !== active.value?.id)]
 })
 const { floatingStyle } = useFloatingPanel(trigger, open, {
   width: props.compact ? 288 : 'anchor',
@@ -41,18 +46,63 @@ function openFromShortcut() {
 }
 
 onMounted(() => window.addEventListener(WORKSPACE_SHORTCUT_EVENT, openFromShortcut))
-onBeforeUnmount(() => window.removeEventListener(WORKSPACE_SHORTCUT_EVENT, openFromShortcut))
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+let browseToken = 0
+onBeforeUnmount(() => {
+  window.removeEventListener(WORKSPACE_SHORTCUT_EVENT, openFromShortcut)
+  clearTimeout(searchTimer)
+})
+
+async function loadWorkspacePage(reset = false) {
+  if ((!reset && browseLoading.value) || (!reset && !nextCursor.value)) return
+  const token = reset ? ++browseToken : browseToken
+  browseLoading.value = true
+  try {
+    const response = await services.workspaces.list({
+      search: search.value.trim() || undefined,
+      cursor: reset ? undefined : nextCursor.value || undefined,
+      limit: 20,
+    })
+    if (token !== browseToken) return
+    browseItems.value = reset
+      ? response.data
+      : [...browseItems.value, ...response.data.filter(item => !browseItems.value.some(existing => existing.id === item.id))]
+    nextCursor.value = response.meta.next_cursor
+    browseReady.value = true
+  } catch (error) {
+    if (token === browseToken) toast.error(error instanceof ApiError ? error.message : 'Could not load workspaces')
+  } finally {
+    if (token === browseToken) browseLoading.value = false
+  }
+}
+
+function onListScroll(event: Event) {
+  const element = event.currentTarget as HTMLElement
+  if (element.scrollHeight - element.scrollTop - element.clientHeight < 48) loadWorkspacePage()
+}
+
+watch(search, () => {
+  if (!open.value) return
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => loadWorkspacePage(true), 300)
+})
 
 watch(open, async (isOpen) => {
   if (!isOpen) {
     search.value = ''
+    browseItems.value = []
+    nextCursor.value = null
+    browseReady.value = false
     return
   }
+  await loadWorkspacePage(true)
   await nextTick()
   searchInput.value?.focus()
 })
 
 async function choose(id: string) {
+  const workspace = browseItems.value.find(item => item.id === id)
+  if (workspace) remember(workspace)
   select(id)
   open.value = false
   // Dashboard pages watch the active workspace and refetch their own data, so
@@ -133,21 +183,32 @@ async function submit() {
           >
         </div>
       </div>
-      <ul role="listbox" class="max-h-64 overflow-y-auto py-1">
-        <li v-for="workspace in filteredWorkspaces" :key="workspace.id">
+      <ul role="listbox" class="max-h-64 overflow-y-auto py-1" @scroll.passive="onListScroll">
+        <li v-for="workspace in displayedWorkspaces" :key="workspace.id">
           <button
             type="button"
             role="option"
             :aria-selected="workspace.id === active?.id"
-            class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-(--color-surface-muted)"
+            class="flex w-full items-center justify-between gap-2 border-l-2 px-3 py-2 text-left text-sm transition-colors"
+            :class="workspace.id === active?.id
+              ? 'border-(--color-accent) bg-(--color-accent)/10 font-semibold text-(--color-accent)'
+              : 'border-transparent hover:bg-(--color-surface-muted)'"
             @click="choose(workspace.id)"
           >
             <span class="min-w-0 truncate">{{ workspace.name }}</span>
-            <span class="shrink-0 text-xs text-(--color-content-subtle)">{{ workspace.role }}</span>
+            <span class="flex shrink-0 items-center gap-1.5 text-xs" :class="workspace.id === active?.id ? 'text-(--color-accent)' : 'text-(--color-content-subtle)'">
+              {{ workspace.role }}
+            </span>
           </button>
         </li>
-        <li v-if="!filteredWorkspaces.length" class="px-3 py-6 text-center text-sm text-(--color-content-muted)">
+        <li v-if="browseReady && !displayedWorkspaces.length" class="px-3 py-6 text-center text-sm text-(--color-content-muted)">
           No workspaces found
+        </li>
+        <li v-if="browseLoading" class="space-y-2 px-3 py-3" aria-label="Loading more workspaces" role="status">
+          <UiSkeleton v-for="item in 3" :key="item" height="1.75rem" rounded="lg" />
+        </li>
+        <li v-else-if="browseReady && displayedWorkspaces.length && !nextCursor" class="px-3 py-2 text-center text-[10px] font-medium text-(--color-content-subtle)">
+          All workspaces loaded
         </li>
       </ul>
 
@@ -174,10 +235,11 @@ async function submit() {
         <button
           v-else
           type="button"
-          class="w-full rounded px-2 py-1.5 text-left text-sm text-(--color-content-muted) transition-colors hover:bg-(--color-surface-muted) hover:text-(--color-content)"
+          class="flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-(--color-content-muted) transition-colors hover:bg-(--color-surface-muted) hover:text-(--color-content)"
           @click="creating = true"
         >
-          + New workspace
+          <Icon name="lucide:plus" size="17" />
+          Create new workspace
         </button>
       </div>
       <div class="border-t border-(--color-border) p-2">

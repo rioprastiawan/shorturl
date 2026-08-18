@@ -75,6 +75,17 @@ type ClickHourly struct {
 	Clicks      int64
 }
 
+type DeletionJob struct {
+	ID           int64
+	ResourceType string
+	ResourceID   uuid.UUID
+	WorkspaceID  uuid.UUID
+	NotBefore    time.Time
+	CreatedAt    time.Time
+	LastError    *string
+	Attempts     int32
+}
+
 type Domain struct {
 	ID                 uuid.UUID
 	WorkspaceID        uuid.UUID
@@ -89,6 +100,7 @@ type Domain struct {
 	LastCheckedAt      *time.Time
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	RootRedirectUrl    *string
 }
 
 type IdempotencyKey struct {
@@ -162,12 +174,13 @@ type UserTwoFactor struct {
 }
 
 type Workspace struct {
-	ID          uuid.UUID
-	Name        string
-	Slug        string
-	OwnerUserID uuid.UUID
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                  uuid.UUID
+	Name                string
+	Slug                string
+	OwnerUserID         uuid.UUID
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	DeletionRequestedAt *time.Time
 }
 
 type WorkspaceInvitation struct {

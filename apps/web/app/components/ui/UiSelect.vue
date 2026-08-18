@@ -182,7 +182,7 @@ function onKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div ref="root" class="relative flex flex-col gap-1">
+  <div ref="root" class="relative flex min-w-0 max-w-full flex-col gap-1">
     <label v-if="label" :id="`${id}-label`" :for="id" class="text-sm font-medium">
       {{ label }}
       <span v-if="required" class="text-(--color-danger)" aria-hidden="true">*</span>
@@ -200,12 +200,12 @@ function onKeydown(event: KeyboardEvent) {
       :aria-invalid="error ? 'true' : undefined"
       :aria-describedby="error ? `${id}-error` : hint ? `${id}-hint` : undefined"
       :disabled="disabled"
-      class="flex w-full items-center justify-between gap-2.5 rounded-md border border-(--color-border-strong) bg-(--color-surface-raised) text-left text-sm shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:border-(--color-content-subtle) focus:-translate-y-px focus:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+      class="flex min-w-0 w-full max-w-full items-center justify-between gap-2.5 overflow-hidden rounded-md border border-(--color-border-strong) bg-(--color-surface-raised) text-left text-sm shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:border-(--color-content-subtle) focus:-translate-y-px focus:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
       :class="[size === 'sm' ? 'px-2.5 py-1.5' : 'px-3 py-1.5', error ? 'border-(--color-danger)' : '']"
       @click="open ? close() : show()"
       @keydown="onKeydown"
     >
-      <span class="min-w-0 truncate" :class="selected ? '' : 'text-(--color-content-subtle)'">
+      <span class="min-w-0 flex-1 truncate" :class="selected ? '' : 'text-(--color-content-subtle)'" :title="selected?.label">
         {{ selected?.label ?? placeholder }}
       </span>
       <Icon name="lucide:chevron-down" size="16" class="shrink-0 text-(--color-content-subtle) transition-transform duration-200" :class="open ? 'rotate-180' : ''" />
@@ -248,7 +248,7 @@ function onKeydown(event: KeyboardEvent) {
           @mouseenter="activeIndex = index"
           @click="choose(index)"
         >
-          <span class="truncate">{{ option.label }}</span>
+          <span class="min-w-0 flex-1 truncate" :title="option.label">{{ option.label }}</span>
           <Icon v-if="option.value === model" name="lucide:check" size="16" class="shrink-0 text-(--color-accent)" />
         </button>
         <p v-if="!visibleOptions.length" class="px-3 py-6 text-center text-sm text-(--color-content-muted)">

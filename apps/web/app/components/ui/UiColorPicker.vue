@@ -84,8 +84,8 @@ function hsvToHex(h: number, s: number, v: number) {
 <template>
   <div class="flex flex-col gap-1.5" :class="disabled ? 'opacity-55' : ''">
     <label v-if="label" :for="id" class="text-sm font-medium">{{ label }}</label>
-    <div class="flex rounded-lg border bg-(--color-surface-raised) p-1 shadow-sm transition-colors focus-within:border-(--color-accent)" :class="valid ? 'border-(--color-border-strong)' : 'border-(--color-danger)'">
-      <button ref="trigger" type="button" class="relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-md border border-black/10 shadow-inner" :style="{ background: displayColor }" :disabled="disabled" :aria-expanded="open" aria-haspopup="dialog" title="Open color picker" @click="open = !open"><Icon name="lucide:pipette" size="14" class="mix-blend-difference text-white" /></button>
+    <div class="flex rounded-lg border bg-(--color-surface-raised) p-1 shadow-sm transition-[border-color,box-shadow,transform] focus-within:-translate-y-px focus-within:shadow-md focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-(--color-accent)" :class="valid ? 'border-(--color-border-strong)' : 'border-(--color-danger)'">
+      <button ref="trigger" type="button" class="relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-md border border-black/10 shadow-inner focus-visible:outline-none" :style="{ background: displayColor }" :disabled="disabled" :aria-expanded="open" aria-haspopup="dialog" title="Open color picker" @click="open = !open"><Icon name="lucide:pipette" size="14" class="mix-blend-difference text-white" /></button>
       <span class="grid place-items-center px-2 font-mono text-xs text-(--color-content-subtle)">#</span>
       <input :id="id" :value="model.replace(/^#/, '')" maxlength="6" spellcheck="false" class="min-w-0 flex-1 bg-transparent pr-2 font-mono text-sm uppercase outline-none" :disabled="disabled" @input="inputHex" @blur="normalize">
     </div>

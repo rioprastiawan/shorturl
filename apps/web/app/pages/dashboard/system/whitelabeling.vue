@@ -3,7 +3,7 @@ import type { SystemBranding } from '~/types/api'
 import { DEFAULT_BRANDING } from '~/composables/useBranding'
 import { ApiError } from '~/composables/useApi'
 
-definePageMeta({ middleware: 'auth' })
+definePageMeta({ middleware: ['auth', 'workspace-admin'] })
 useHead({ title: 'Whitelabeling · ShortURL' })
 
 const session = useSession()
@@ -85,9 +85,9 @@ async function resetBranding() {
 
 <template>
   <div class="flex flex-col gap-6">
-    <header class="flex flex-wrap items-start justify-between gap-3">
+    <header class="flex flex-wrap items-center justify-between gap-3">
       <div><p class="mb-1 text-sm font-semibold text-(--color-accent)">System</p><h1 class="text-2xl font-bold tracking-tight sm:text-3xl">Whitelabeling</h1><p class="text-sm text-(--color-content-muted)">Customize this entire installation for your organization.</p></div>
-      <UiButton v-if="isAdmin" variant="secondary" @click="resetOpen = true">Reset defaults</UiButton>
+      <UiButton v-if="isAdmin" class="w-full sm:w-auto" variant="secondary" @click="resetOpen = true">Reset defaults</UiButton>
     </header>
 
     <UiCard v-if="!isAdmin" :padded="false"><UiEmptyState title="System administrator access required" description="Only installation administrators can change whitelabeling settings." /></UiCard>
@@ -113,13 +113,13 @@ async function resetBranding() {
       </UiCard>
 
       <UiCard title="Brand experience" description="Global colors and authentication-page messaging.">
-        <div class="grid gap-4 sm:grid-cols-2"><label class="text-sm font-medium">Primary color<div class="mt-1.5 flex items-center gap-2"><input v-model="form.primary_color" type="color" class="size-10 rounded"><UiInput v-model="form.primary_color" /></div></label><label class="text-sm font-medium">Navigation color<div class="mt-1.5 flex items-center gap-2"><input v-model="form.shell_color" type="color" class="size-10 rounded"><UiInput v-model="form.shell_color" /></div></label></div>
-        <div class="mt-4 grid gap-4"><UiInput v-model="form.login_heading" label="Login heading" /><div><label class="mb-1.5 block text-sm font-medium">Login description</label><textarea v-model="form.login_description" rows="3" class="w-full rounded-md border border-(--color-border) bg-(--color-surface-raised) px-3 py-2 text-sm outline-none focus:border-(--color-accent)" /></div><UiInput v-model="form.footer_text" label="Footer text" /></div>
+        <div class="grid gap-4 sm:grid-cols-2"><UiColorPicker v-model="form.primary_color" label="Primary color" /><UiColorPicker v-model="form.shell_color" label="Navigation color" /></div>
+        <div class="mt-4 grid gap-4"><UiInput v-model="form.login_heading" label="Login heading" /><div><label class="mb-1.5 block text-sm font-medium">Login description</label><textarea v-model="form.login_description" rows="3" class="w-full rounded-md border border-(--color-border-strong) bg-(--color-surface-raised) px-3 py-2 text-sm shadow-sm transition-[border-color,box-shadow,transform] hover:border-(--color-content-subtle) focus:-translate-y-px focus:shadow-md" /></div><UiInput v-model="form.footer_text" label="Footer text" /></div>
       </UiCard>
 
       <UiCard title="Support and legal links" description="Optional destinations shown where users need help or policy information."><div class="grid gap-4 sm:grid-cols-2"><UiInput v-model="form.support_email" label="Support email" type="email" /><UiInput v-model="form.support_url" label="Support URL" type="url" /><UiInput v-model="form.documentation_url" label="Documentation URL" type="url" /><UiInput v-model="form.privacy_url" label="Privacy policy URL" type="url" /><UiInput v-model="form.terms_url" label="Terms URL" type="url" /></div></UiCard>
 
-      <div class="sticky bottom-20 z-10 flex justify-end rounded-xl border border-(--color-border) bg-(--color-surface-raised)/95 p-3 shadow-lg backdrop-blur lg:bottom-4"><UiButton type="submit" :loading="saving">Save whitelabeling</UiButton></div>
+      <div class="sticky bottom-20 z-10 flex justify-end rounded-xl border border-(--color-border) bg-(--color-surface-raised)/95 p-3 shadow-lg backdrop-blur lg:bottom-4"><UiButton class="w-full sm:w-auto" type="submit" :loading="saving">Save whitelabeling</UiButton></div>
     </form>
 
     <UiModal v-model="resetOpen" title="Reset all whitelabeling?" description="Names, colors, copy, links, logos, and favicon will return to the ShortURL defaults." danger><template #actions><UiButton variant="secondary" :disabled="saving" @click="resetOpen = false">Cancel</UiButton><UiButton variant="danger" :loading="saving" @click="resetBranding">Reset whitelabeling</UiButton></template></UiModal>

@@ -15,13 +15,14 @@ const emit = defineEmits<{
 <template>
   <div
     v-if="page > 1 || hasNext"
-    class="flex flex-wrap items-center justify-between gap-3 border-t border-(--color-border) px-5 py-3"
+    class="flex min-w-0 flex-col gap-2 border-t border-(--color-border) px-3.5 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-5"
   >
     <p class="text-xs text-(--color-content-muted)" aria-live="polite">
-      Page {{ page }}<span v-if="label"> · {{ label }}</span>
+      <span v-if="label">{{ label }}</span><span v-else>Showing current page</span>
+      <span> · Page {{ page }}</span>
     </p>
 
-    <nav class="flex items-center gap-2" aria-label="Pagination">
+    <nav class="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start" aria-label="Pagination">
       <UiButton
         variant="secondary"
         size="sm"
@@ -30,7 +31,7 @@ const emit = defineEmits<{
         @click="emit('previous')"
       >
         <Icon name="lucide:chevron-left" size="14" />
-        Previous
+        <span>Previous</span>
       </UiButton>
       <UiButton
         variant="secondary"
@@ -40,7 +41,7 @@ const emit = defineEmits<{
         aria-label="Next page"
         @click="emit('next')"
       >
-        Next
+        <span>Next</span>
         <Icon v-if="!loading" name="lucide:chevron-right" size="14" />
       </UiButton>
     </nav>

@@ -32,10 +32,21 @@ func (q *Queries) CountActiveDomains(ctx context.Context, workspaceID uuid.UUID)
 	return count, err
 }
 
+const countDomains = `-- name: CountDomains :one
+SELECT count(*) FROM domains WHERE workspace_id = $1
+`
+
+func (q *Queries) CountDomains(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countDomains, workspaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createDomain = `-- name: CreateDomain :one
 INSERT INTO domains (workspace_id, hostname, verification_token, verification_method, is_default)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at
+RETURNING id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url
 `
 
 type CreateDomainParams struct {
@@ -69,6 +80,7 @@ func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) (Dom
 		&i.LastCheckedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RootRedirectUrl,
 	)
 	return i, err
 }
@@ -91,7 +103,7 @@ func (q *Queries) DeleteDomain(ctx context.Context, arg DeleteDomainParams) (int
 }
 
 const getDefaultDomain = `-- name: GetDefaultDomain :one
-SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at FROM domains
+SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url FROM domains
 WHERE workspace_id = $1 AND is_default AND status = 'active'
 `
 
@@ -112,12 +124,13 @@ func (q *Queries) GetDefaultDomain(ctx context.Context, workspaceID uuid.UUID) (
 		&i.LastCheckedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RootRedirectUrl,
 	)
 	return i, err
 }
 
 const getDomain = `-- name: GetDomain :one
-SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at FROM domains WHERE id = $1
+SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url FROM domains WHERE id = $1
 `
 
 func (q *Queries) GetDomain(ctx context.Context, id uuid.UUID) (Domain, error) {
@@ -137,12 +150,13 @@ func (q *Queries) GetDomain(ctx context.Context, id uuid.UUID) (Domain, error) {
 		&i.LastCheckedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RootRedirectUrl,
 	)
 	return i, err
 }
 
 const getDomainByHostname = `-- name: GetDomainByHostname :one
-SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at FROM domains WHERE LOWER(hostname) = LOWER($1::text)
+SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url FROM domains WHERE LOWER(hostname) = LOWER($1::text)
 `
 
 func (q *Queries) GetDomainByHostname(ctx context.Context, hostname string) (Domain, error) {
@@ -162,12 +176,13 @@ func (q *Queries) GetDomainByHostname(ctx context.Context, hostname string) (Dom
 		&i.LastCheckedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RootRedirectUrl,
 	)
 	return i, err
 }
 
 const getDomainByHostnameInWorkspace = `-- name: GetDomainByHostnameInWorkspace :one
-SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at FROM domains
+SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url FROM domains
 WHERE LOWER(hostname) = LOWER($1::text)
   AND workspace_id = $2
 `
@@ -194,12 +209,13 @@ func (q *Queries) GetDomainByHostnameInWorkspace(ctx context.Context, arg GetDom
 		&i.LastCheckedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RootRedirectUrl,
 	)
 	return i, err
 }
 
 const getDomainInWorkspace = `-- name: GetDomainInWorkspace :one
-SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at FROM domains WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url FROM domains WHERE id = $1 AND workspace_id = $2
 `
 
 type GetDomainInWorkspaceParams struct {
@@ -224,12 +240,13 @@ func (q *Queries) GetDomainInWorkspace(ctx context.Context, arg GetDomainInWorks
 		&i.LastCheckedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RootRedirectUrl,
 	)
 	return i, err
 }
 
 const listActiveDomains = `-- name: ListActiveDomains :many
-SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at FROM domains WHERE status = 'active' ORDER BY hostname ASC
+SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url FROM domains WHERE status = 'active' ORDER BY hostname ASC
 `
 
 func (q *Queries) ListActiveDomains(ctx context.Context) ([]Domain, error) {
@@ -255,6 +272,7 @@ func (q *Queries) ListActiveDomains(ctx context.Context) ([]Domain, error) {
 			&i.LastCheckedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RootRedirectUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -291,7 +309,7 @@ func (q *Queries) ListDomainHostnamesForWorkspace(ctx context.Context, workspace
 }
 
 const listDomains = `-- name: ListDomains :many
-SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at FROM domains WHERE workspace_id = $1 ORDER BY is_default DESC, created_at ASC
+SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url FROM domains WHERE workspace_id = $1 ORDER BY is_default DESC, created_at ASC
 `
 
 func (q *Queries) ListDomains(ctx context.Context, workspaceID uuid.UUID) ([]Domain, error) {
@@ -317,6 +335,55 @@ func (q *Queries) ListDomains(ctx context.Context, workspaceID uuid.UUID) ([]Dom
 			&i.LastCheckedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RootRedirectUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDomainsPage = `-- name: ListDomainsPage :many
+SELECT id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url FROM domains
+WHERE workspace_id = $1
+ORDER BY is_default DESC, created_at ASC
+LIMIT $3 OFFSET $2
+`
+
+type ListDomainsPageParams struct {
+	WorkspaceID uuid.UUID
+	PageOffset  int32
+	PageLimit   int32
+}
+
+func (q *Queries) ListDomainsPage(ctx context.Context, arg ListDomainsPageParams) ([]Domain, error) {
+	rows, err := q.db.Query(ctx, listDomainsPage, arg.WorkspaceID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Domain{}
+	for rows.Next() {
+		var i Domain
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Hostname,
+			&i.Status,
+			&i.VerificationToken,
+			&i.VerificationMethod,
+			&i.VerificationError,
+			&i.SslStatus,
+			&i.IsDefault,
+			&i.VerifiedAt,
+			&i.LastCheckedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.RootRedirectUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -329,7 +396,7 @@ func (q *Queries) ListDomains(ctx context.Context, workspaceID uuid.UUID) ([]Dom
 }
 
 const setDefaultDomain = `-- name: SetDefaultDomain :one
-UPDATE domains SET is_default = TRUE WHERE id = $1 RETURNING id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at
+UPDATE domains SET is_default = TRUE WHERE id = $1 RETURNING id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url
 `
 
 func (q *Queries) SetDefaultDomain(ctx context.Context, id uuid.UUID) (Domain, error) {
@@ -349,6 +416,43 @@ func (q *Queries) SetDefaultDomain(ctx context.Context, id uuid.UUID) (Domain, e
 		&i.LastCheckedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RootRedirectUrl,
+	)
+	return i, err
+}
+
+const updateDomainRootRedirect = `-- name: UpdateDomainRootRedirect :one
+UPDATE domains
+SET root_redirect_url = $1,
+    updated_at = now()
+WHERE id = $2 AND workspace_id = $3
+RETURNING id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url
+`
+
+type UpdateDomainRootRedirectParams struct {
+	RootRedirectUrl *string
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+}
+
+func (q *Queries) UpdateDomainRootRedirect(ctx context.Context, arg UpdateDomainRootRedirectParams) (Domain, error) {
+	row := q.db.QueryRow(ctx, updateDomainRootRedirect, arg.RootRedirectUrl, arg.ID, arg.WorkspaceID)
+	var i Domain
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Hostname,
+		&i.Status,
+		&i.VerificationToken,
+		&i.VerificationMethod,
+		&i.VerificationError,
+		&i.SslStatus,
+		&i.IsDefault,
+		&i.VerifiedAt,
+		&i.LastCheckedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RootRedirectUrl,
 	)
 	return i, err
 }
@@ -375,7 +479,7 @@ SET status = $2,
     verified_at = $5,
     last_checked_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at
+RETURNING id, workspace_id, hostname, status, verification_token, verification_method, verification_error, ssl_status, is_default, verified_at, last_checked_at, created_at, updated_at, root_redirect_url
 `
 
 type UpdateDomainVerificationParams struct {
@@ -409,6 +513,7 @@ func (q *Queries) UpdateDomainVerification(ctx context.Context, arg UpdateDomain
 		&i.LastCheckedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RootRedirectUrl,
 	)
 	return i, err
 }

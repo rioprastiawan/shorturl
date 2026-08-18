@@ -254,7 +254,7 @@ async function confirmRemove() {
 <template>
   <div class="flex flex-col gap-6">
     <header>
-      <p class="mb-1 text-sm font-semibold text-(--color-accent)">Manage</p>
+      <p class="mb-1 text-sm font-semibold text-(--color-accent)">Workspace</p>
       <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
         Team members
       </h1>
@@ -303,8 +303,8 @@ async function confirmRemove() {
           </div>
         </div>
 
-        <div class="flex items-center gap-3 border-t border-(--color-border) pt-4">
-          <UiButton type="button" variant="secondary" :loading="generatingInvitation" @click="createInvitation">
+        <div class="flex flex-col items-start gap-2 border-t border-(--color-border) pt-4 sm:flex-row sm:items-center sm:gap-3">
+          <UiButton class="w-full sm:w-auto" type="button" variant="secondary" :loading="generatingInvitation" @click="createInvitation">
             Generate invitation link
           </UiButton>
           <span class="text-xs text-(--color-content-muted)">Uses the selected role; no email is required.</span>
@@ -391,7 +391,7 @@ async function confirmRemove() {
         <li
           v-for="member in members"
           :key="member.user_id"
-          class="flex flex-wrap items-center gap-x-4 gap-y-3 px-5 py-3"
+          class="flex flex-wrap items-center gap-x-3 gap-y-3 px-3.5 py-3 sm:gap-x-4 sm:px-5"
         >
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium">
@@ -401,6 +401,9 @@ async function confirmRemove() {
             <p class="truncate text-xs text-(--color-content-muted)">
               {{ member.email }}
             </p>
+            <UiBadge v-if="member.two_factor_enabled" tone="success" class="mt-1.5">
+              <Icon name="lucide:shield-check" size="12" /> 2-step enabled
+            </UiBadge>
             <p class="mt-0.5 text-xs text-(--color-content-subtle)">
               Joined {{ formatDate(member.created_at) }}
             </p>
@@ -446,7 +449,7 @@ async function confirmRemove() {
               size="sm"
               @click="askRemove(member)"
             >
-              Remove
+              <span class="text-(--color-danger)">Remove</span>
             </UiButton>
           </div>
         </li>

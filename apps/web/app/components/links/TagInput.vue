@@ -95,7 +95,7 @@ function selectSuggestion(tag: string) {
     </label>
     <div class="relative">
     <div
-      class="flex min-h-10 flex-wrap items-center gap-1.5 rounded-md border bg-(--color-surface-raised) px-2.5 py-1.5 transition-colors"
+      class="flex min-h-10 flex-wrap items-center gap-1.5 rounded-md border bg-(--color-surface-raised) px-2.5 py-1.5 transition-[border-color,box-shadow,transform] focus-within:-translate-y-px focus-within:shadow-md focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-(--color-accent)"
       :class="[
         error ? 'border-(--color-danger)' : 'border-(--color-border) focus-within:border-(--color-accent)',
         disabled ? 'cursor-not-allowed opacity-60' : 'cursor-text',

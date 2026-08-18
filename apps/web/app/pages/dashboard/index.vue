@@ -70,7 +70,7 @@ const errorMessage = computed(() => {
           Here’s what’s happening with your links today.
         </p>
       </div>
-      <UiButton @click="createLinkModal.show()">
+      <UiButton class="w-full sm:w-auto" @click="createLinkModal.show()">
         <Icon name="lucide:plus" size="17" /> Create short link
       </UiButton>
     </header>
@@ -198,8 +198,8 @@ const errorMessage = computed(() => {
 
             <div class="flex shrink-0 items-center gap-3">
               <span class="text-sm tabular-nums text-(--color-content-muted)">
-                {{ formatNumber(link.click_count) }}
-                <span class="text-xs">{{ link.click_count === 1 ? 'click' : 'clicks' }}</span>
+                {{ formatNumber(link.clicks) }}
+                <span class="text-xs">{{ link.clicks === 1 ? 'click' : 'clicks' }}</span>
               </span>
               <UiCopyButton :value="link.short_url" />
             </div>

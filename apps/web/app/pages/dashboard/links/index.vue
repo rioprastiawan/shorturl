@@ -123,6 +123,34 @@ const importedCount = ref(0)
 const importFailures = ref<ImportFailure[]>([])
 const exporting = ref(false)
 const validImportRows = computed(() => importRows.value.filter(row => !row.error))
+const importPreviewScrollTop = ref(0)
+const IMPORT_PREVIEW_ROW_HEIGHT = 44
+const IMPORT_PREVIEW_HEIGHT = 308
+const IMPORT_PREVIEW_OVERSCAN = 5
+const importPreviewStart = computed(() => Math.max(0, Math.floor(importPreviewScrollTop.value / IMPORT_PREVIEW_ROW_HEIGHT) - IMPORT_PREVIEW_OVERSCAN))
+const importPreviewEnd = computed(() => Math.min(
+  importRows.value.length,
+  Math.ceil((importPreviewScrollTop.value + IMPORT_PREVIEW_HEIGHT) / IMPORT_PREVIEW_ROW_HEIGHT) + IMPORT_PREVIEW_OVERSCAN,
+))
+const visibleImportRows = computed(() => importRows.value.slice(importPreviewStart.value, importPreviewEnd.value))
+const importPreviewTopSpace = computed(() => importPreviewStart.value * IMPORT_PREVIEW_ROW_HEIGHT)
+const importPreviewBottomSpace = computed(() => (importRows.value.length - importPreviewEnd.value) * IMPORT_PREVIEW_ROW_HEIGHT)
+
+function openImportDialog() {
+  importRows.value = []
+  importFileName.value = ''
+  importFailures.value = []
+  importedCount.value = 0
+  importPreviewScrollTop.value = 0
+  importOpen.value = true
+}
+
+function downloadImportTemplate() {
+  downloadText('shorturl-import-template.csv', encodeCsv([
+    ['destination_url', 'domain', 'slug', 'title', 'status', 'redirect_type', 'expires_at', 'max_clicks', 'external_reference', 'tags', 'notes'],
+    ['https://example.com/campaign', '', 'campaign', 'Campaign link', 'active', 302, '', '', 'campaign-001', 'marketing|campaign', 'Optional notes'],
+  ]))
+}
 
 function importError(values: Record<string, string>): string | undefined {
   const destinationUrl = values.destination_url ?? ''
@@ -150,6 +178,20 @@ async function chooseImportFile(event: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
+  await readImportFile(file)
+}
+
+async function dropImportFile(event: DragEvent) {
+  const file = event.dataTransfer?.files[0]
+  if (!file) return
+  await readImportFile(file)
+}
+
+async function readImportFile(file: File) {
+  if (!file.name.toLowerCase().endsWith('.csv') && file.type !== 'text/csv') {
+    toast.error('Choose a CSV file to import.')
+    return
+  }
   if (file.size > 1024 * 1024) {
     toast.error('CSV files are limited to 1 MB.')
     return
@@ -169,7 +211,7 @@ async function chooseImportFile(event: Event) {
     importFileName.value = file.name
     importFailures.value = []
     importedCount.value = 0
-    importOpen.value = true
+    importPreviewScrollTop.value = 0
   } catch (error) {
     toast.error(error instanceof Error ? error.message : 'Could not read the CSV file.')
   }
@@ -476,15 +518,14 @@ async function confirmDelete() {
           Create, organize, and track every short link in one place.
         </p>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <input ref="importInput" type="file" accept=".csv,text/csv" class="hidden" @change="chooseImportFile">
-        <UiButton variant="secondary" :disabled="importing" @click="importInput?.click()">
+      <div class="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+        <UiButton variant="secondary" :disabled="importing" @click="openImportDialog">
           <Icon name="lucide:upload" size="16" /> Import CSV
         </UiButton>
         <UiButton variant="secondary" :loading="exporting" @click="exportCsv">
           <Icon name="lucide:download" size="16" /> Export CSV
         </UiButton>
-        <UiButton @click="createLinkModal.show()">
+        <UiButton class="col-span-2 sm:col-span-1" @click="createLinkModal.show()">
           <Icon name="lucide:plus" size="17" /> Create short link
         </UiButton>
       </div>
@@ -539,16 +580,16 @@ async function confirmDelete() {
           </button>
         </div>
 
-        <div class="flex items-center gap-2 border-t border-(--color-border) pt-2.5 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
+        <div class="flex min-w-0 flex-wrap items-center gap-2 border-t border-(--color-border) pt-2.5 sm:flex-nowrap sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
           <Icon name="lucide:globe-2" size="15" class="shrink-0 text-(--color-content-subtle)" />
           <UiSelect
             v-model="domainId"
             input-id="filter-domain"
             :options="domainFilterOptions"
             size="sm"
-            class="min-w-40 flex-1 sm:w-52 sm:flex-none"
+            class="min-w-0 flex-1 basis-36 sm:w-52 sm:flex-none"
           />
-          <div class="relative min-w-36 flex-1 sm:w-44 sm:flex-none">
+          <div class="relative min-w-0 flex-1 basis-32 sm:w-44 sm:flex-none">
             <Icon name="lucide:tag" size="14" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-(--color-content-subtle)" />
             <input
               v-model="tag"
@@ -702,7 +743,7 @@ async function confirmDelete() {
             :page="currentPage"
             :has-next="Boolean(nextCursor)"
             :loading="pending"
-            :label="`${items.length} links shown`"
+            :label="`Showing ${(currentPage - 1) * 10 + 1}–${(currentPage - 1) * 10 + items.length} links`"
             @previous="previousPage"
             @next="nextPage"
           />
@@ -713,14 +754,70 @@ async function confirmDelete() {
     <UiModal
       v-model="importOpen"
       title="Import links from CSV"
-      :description="`${importFileName} · ${importRows.length} data rows`"
+      :description="importFileName ? `${importFileName} · ${importRows.length} data rows` : 'Upload a CSV file or start with the import template.'"
       size="lg"
     >
       <div class="space-y-4">
-        <div class="grid grid-cols-3 gap-3 text-center">
+        <input ref="importInput" type="file" accept=".csv,text/csv" class="sr-only" @change="chooseImportFile">
+        <button
+          type="button"
+          class="flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-(--color-border-strong) bg-(--color-surface-muted)/45 px-5 py-8 text-center transition-colors hover:border-(--color-accent) hover:bg-(--color-accent)/5"
+          @click="importInput?.click()"
+          @dragover.prevent
+          @drop.prevent="dropImportFile"
+        >
+          <span class="grid size-11 place-items-center rounded-full bg-(--color-accent)/10 text-(--color-accent)"><Icon name="lucide:file-up" size="21" /></span>
+          <span class="mt-3 text-sm font-semibold">{{ importFileName ? 'Choose another CSV file' : 'Choose a CSV file' }}</span>
+          <span class="mt-1 text-xs text-(--color-content-muted)">or drag and drop here · maximum 1 MB and 1,000 links</span>
+        </button>
+
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-(--color-border) px-3 py-2.5">
+          <div><p class="text-sm font-medium">Need the correct format?</p><p class="text-xs text-(--color-content-muted)">Download a ready-to-edit CSV with every supported column.</p></div>
+          <UiButton variant="secondary" size="sm" @click="downloadImportTemplate"><Icon name="lucide:download" size="14" /> Download template</UiButton>
+        </div>
+
+        <div v-if="importRows.length" class="grid grid-cols-3 gap-3 text-center">
           <div class="rounded-lg bg-(--color-surface-muted) p-3"><p class="text-xl font-bold">{{ importRows.length }}</p><p class="text-xs text-(--color-content-muted)">Rows</p></div>
           <div class="rounded-lg bg-emerald-500/8 p-3"><p class="text-xl font-bold text-(--color-success)">{{ importedCount || validImportRows.length }}</p><p class="text-xs text-(--color-content-muted)">{{ importedCount ? 'Imported' : 'Ready' }}</p></div>
           <div class="rounded-lg bg-red-500/8 p-3"><p class="text-xl font-bold text-(--color-danger)">{{ importFailures.length || importRows.length - validImportRows.length }}</p><p class="text-xs text-(--color-content-muted)">Failed</p></div>
+        </div>
+        <div v-if="importRows.length" class="overflow-hidden rounded-lg border border-(--color-border)">
+          <div class="flex items-center justify-between border-b border-(--color-border) bg-(--color-surface-muted)/60 px-3 py-2">
+            <p class="text-sm font-semibold">Import preview</p>
+            <p class="text-[10px] text-(--color-content-subtle)">Virtualized · {{ importRows.length }} rows</p>
+          </div>
+          <div
+            class="overflow-auto"
+            :style="{ height: `${IMPORT_PREVIEW_HEIGHT}px` }"
+            @scroll="importPreviewScrollTop = ($event.currentTarget as HTMLElement).scrollTop"
+          >
+            <table class="w-full table-fixed text-left text-xs">
+              <thead class="sticky top-0 z-10 bg-(--color-surface-raised) shadow-[0_1px_0_var(--color-border)]">
+                <tr class="h-9 text-(--color-content-muted)">
+                  <th class="w-13 px-3 font-medium">Line</th>
+                  <th class="px-3 font-medium">Destination</th>
+                  <th class="hidden w-36 px-3 font-medium sm:table-cell">Slug / domain</th>
+                  <th class="w-24 px-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="importPreviewTopSpace" aria-hidden="true"><td colspan="4" class="p-0" :style="{ height: `${importPreviewTopSpace}px` }" /></tr>
+                <tr
+                  v-for="row in visibleImportRows"
+                  :key="row.line"
+                  class="border-b border-(--color-border) last:border-0"
+                  :class="row.error ? 'bg-red-500/5' : ''"
+                  :style="{ height: `${IMPORT_PREVIEW_ROW_HEIGHT}px` }"
+                >
+                  <td class="px-3 tabular-nums text-(--color-content-subtle)">{{ row.line }}</td>
+                  <td class="px-3"><p class="truncate" :title="row.values.destination_url">{{ row.values.destination_url || '—' }}</p><p v-if="row.error" class="truncate text-[10px] text-(--color-danger)" :title="row.error">{{ row.error }}</p></td>
+                  <td class="hidden px-3 sm:table-cell"><p class="truncate">{{ row.values.slug || 'Auto slug' }}</p><p class="truncate text-[10px] text-(--color-content-subtle)">{{ row.values.domain || 'Default domain' }}</p></td>
+                  <td class="px-3"><span class="inline-flex max-w-full truncate rounded-full px-2 py-0.5 text-[10px] font-semibold" :class="row.error ? 'bg-red-500/10 text-(--color-danger)' : 'bg-emerald-500/10 text-(--color-success)'">{{ row.error ? 'Invalid' : (row.values.status || 'active') }}</span></td>
+                </tr>
+                <tr v-if="importPreviewBottomSpace" aria-hidden="true"><td colspan="4" class="p-0" :style="{ height: `${importPreviewBottomSpace}px` }" /></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
         <div v-if="importFailures.length || importRows.some(row => row.error)" class="max-h-56 overflow-y-auto rounded-lg border border-red-500/20 bg-red-500/5 p-3">
           <p class="mb-2 text-sm font-semibold text-(--color-danger)">Rows requiring attention</p>
@@ -734,7 +831,7 @@ async function confirmDelete() {
       </div>
       <template #actions>
         <UiButton variant="secondary" :disabled="importing" @click="importOpen = false">Close</UiButton>
-        <UiButton :loading="importing" :disabled="!validImportRows.length || importedCount > 0" @click="runImport">Import {{ validImportRows.length }} links</UiButton>
+        <UiButton v-if="importRows.length" :loading="importing" :disabled="!validImportRows.length || importedCount > 0" @click="runImport">Import {{ validImportRows.length }} links</UiButton>
       </template>
     </UiModal>
 

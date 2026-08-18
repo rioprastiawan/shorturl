@@ -26,12 +26,20 @@ export function useWorkspaces() {
   async function load(force = false): Promise<Workspace[]> {
     if (loaded.value && !force) return workspaces.value
 
-    const res = await services.workspaces.list()
+    const res = await services.workspaces.list({ limit: 20 })
     workspaces.value = res.data
     loaded.value = true
 
     // The stored ID can point at a workspace the user was removed from.
-    const stillAMember = workspaces.value.some(w => w.id === activeId.value)
+    let stillAMember = workspaces.value.some(w => w.id === activeId.value)
+    if (!stillAMember && activeId.value) {
+      try {
+        remember(await services.workspaces.get(activeId.value))
+        stillAMember = true
+      } catch {
+        // A removed or deleted stored workspace falls back to the first page.
+      }
+    }
     if (!stillAMember) {
       select(workspaces.value[0]?.id ?? null)
     }
@@ -47,16 +55,22 @@ export function useWorkspaces() {
     }
   }
 
+  function remember(workspace: Workspace) {
+    const index = workspaces.value.findIndex(item => item.id === workspace.id)
+    if (index === -1) workspaces.value = [...workspaces.value, workspace]
+    else workspaces.value = workspaces.value.map(item => item.id === workspace.id ? workspace : item)
+  }
+
   async function create(name: string): Promise<Workspace> {
     const workspace = await services.workspaces.create({ name })
-    workspaces.value = [...workspaces.value, workspace]
+    remember(workspace)
     select(workspace.id)
     return workspace
   }
 
   async function createDemo(size: 'starter' | 'busy' | 'five_year'): Promise<Workspace> {
     const workspace = await services.workspaces.createDemo({ size })
-    workspaces.value = [...workspaces.value, workspace]
+    remember(workspace)
     select(workspace.id)
     return workspace
   }
@@ -78,6 +92,7 @@ export function useWorkspaces() {
     activeId: computed(() => active.value?.id ?? null),
     role: computed(() => active.value?.role ?? null),
     load,
+    remember,
     select,
     create,
     createDemo,

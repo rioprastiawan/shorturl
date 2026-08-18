@@ -70,7 +70,7 @@ const highlighted = computed(() => props.code.split('\n').map((line) => {
 </script>
 
 <template>
-  <div class="overflow-hidden rounded-xl border border-[#30363d] bg-[#0d1117] shadow-inner">
+  <div class="min-w-0 w-full max-w-full overflow-hidden rounded-xl border border-[#30363d] bg-[#0d1117] shadow-inner">
     <div class="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
       <div class="flex gap-1.5" aria-hidden="true">
         <span class="size-2.5 rounded-full bg-[#ff5f56]" />
@@ -79,7 +79,7 @@ const highlighted = computed(() => props.code.split('\n').map((line) => {
       </div>
       <UiCopyButton :value="code" label="Copy code" class="text-slate-300 hover:bg-white/10 hover:text-white" />
     </div>
-    <pre class="overflow-x-auto p-4 text-[12px] leading-6 text-[#c9d1d9]"><code class="font-mono" v-html="highlighted" /></pre>
+    <pre class="min-w-0 w-full max-w-full overflow-x-auto overscroll-x-contain p-4 text-[12px] leading-6 text-[#c9d1d9]"><code class="font-mono" v-html="highlighted" /></pre>
   </div>
 </template>
 

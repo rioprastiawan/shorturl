@@ -93,6 +93,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, r, err)
 			return
 		}
+		h.links.RecordAudit(r.Context(), principal.WorkspaceID, nil, "link.created", "link", view.Link.ID, view.ShortURL(), nil)
 		httpx.Data(w, http.StatusCreated, link.ToDTO(view))
 		return
 	}
@@ -154,6 +155,7 @@ func (h *Handler) createIdempotent(
 	})
 	switch {
 	case err == nil:
+		h.links.RecordAudit(ctx, workspaceID, nil, "link.created", "link", view.Link.ID, view.ShortURL(), nil)
 		httpx.Data(w, http.StatusCreated, link.ToDTO(view))
 	case isUniqueViolation(err):
 		// Two identical requests raced past the lookup and both created a link.
@@ -334,6 +336,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.links.RecordAudit(r.Context(), principal.WorkspaceID, nil, "link.updated", "link", view.Link.ID, view.ShortURL(), nil)
 	httpx.Data(w, http.StatusOK, link.ToDTO(view))
 }
 
@@ -350,19 +353,27 @@ func (h *Handler) disable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Query().Get("hard") == "true" {
+		before, err := h.links.Get(r.Context(), principal.WorkspaceID, id)
+		if err != nil {
+			httpx.Error(w, r, err)
+			return
+		}
 		if err := h.links.Delete(r.Context(), principal.WorkspaceID, id); err != nil {
 			httpx.Error(w, r, err)
 			return
 		}
+		h.links.RecordAudit(r.Context(), principal.WorkspaceID, nil, "link.deleted", "link", id, before.ShortURL(), nil)
 		httpx.NoContent(w)
 		return
 	}
 
 	status := statusDisabled
-	if _, err := h.links.Update(r.Context(), principal.WorkspaceID, id, link.UpdateInput{Status: &status}); err != nil {
+	view, err := h.links.Update(r.Context(), principal.WorkspaceID, id, link.UpdateInput{Status: &status})
+	if err != nil {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.links.RecordAudit(r.Context(), principal.WorkspaceID, nil, "link.disabled", "link", id, view.ShortURL(), nil)
 	httpx.NoContent(w)
 }
 

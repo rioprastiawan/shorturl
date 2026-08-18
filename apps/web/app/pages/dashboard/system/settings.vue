@@ -1,12 +1,16 @@
 <script setup lang="ts">
-definePageMeta({ middleware: 'auth' })
+import type { SetupStatus } from '~/types/api'
+
+definePageMeta({ middleware: ['auth', 'workspace-admin'] })
 useHead({ title: 'System Settings · ShortURL' })
 
 const config = useRuntimeConfig()
+const { setup } = useServices()
 const webVersion = computed(() => String(config.public.appVersion || 'dev'))
 const serverVersion = ref<string | null>(null)
 const latestVersion = ref<string | null>(null)
 const latestReleaseUrl = ref('https://github.com/rioprastiawan/shorturl/releases')
+const installation = ref<SetupStatus | null>(null)
 const checking = ref(true)
 
 function semver(value: string): [number, number, number] | null {
@@ -25,15 +29,17 @@ const updateAvailable = computed(() => {
 })
 
 onMounted(async () => {
-  const [health, release] = await Promise.allSettled([
+  const [health, release, setupStatus] = await Promise.allSettled([
     $fetch<{ version: string }>('/api/v1/system/version'),
     $fetch<{ tag_name: string, html_url: string }>('https://api.github.com/repos/rioprastiawan/shorturl/releases/latest'),
+    setup.status(),
   ])
   if (health.status === 'fulfilled') serverVersion.value = health.value.version
   if (release.status === 'fulfilled') {
     latestVersion.value = release.value.tag_name
     latestReleaseUrl.value = release.value.html_url
   }
+  if (setupStatus.status === 'fulfilled') installation.value = setupStatus.value
   checking.value = false
 })
 </script>
@@ -46,6 +52,21 @@ onMounted(async () => {
       <p class="text-sm text-(--color-content-muted)">Manage this ShortURL installation and check for updates.</p>
     </header>
 
+    <UiCard title="Installation profile" description="The deployment mode selected during the initial setup. This information is view only.">
+      <div v-if="installation" class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-(--color-border) bg-(--color-surface-muted)/45 p-4">
+        <div class="flex items-start gap-3">
+          <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-(--color-accent)/10 text-(--color-accent)"><Icon :name="installation.deployment_mode === 'internal' ? 'lucide:building-2' : 'lucide:cloud'" size="19" /></span>
+          <div>
+            <div class="flex flex-wrap items-center gap-2"><p class="text-sm font-semibold">{{ installation.deployment_mode === 'internal' ? 'Internal / private' : 'Public / SaaS' }}</p><UiBadge tone="neutral">Initial setup</UiBadge></div>
+            <p class="mt-1 text-sm text-(--color-content-muted)">{{ installation.deployment_mode === 'internal' ? 'Public registration is disabled. People join through workspace invitations.' : 'Public registration is enabled. Anyone may register and create a workspace.' }}</p>
+          </div>
+        </div>
+        <div class="shrink-0 text-left sm:text-right"><p class="text-[10px] font-bold uppercase tracking-wider text-(--color-content-subtle)">Public registration</p><UiBadge class="mt-1" :tone="installation.registration_enabled ? 'success' : 'neutral'" dot>{{ installation.registration_enabled ? 'Enabled' : 'Disabled' }}</UiBadge></div>
+      </div>
+      <div v-else-if="checking" class="flex items-center gap-3"><UiSkeleton height="2.5rem" width="2.5rem" rounded="lg" /><div class="flex-1 space-y-2"><UiSkeleton width="9rem" /><UiSkeleton height="0.65rem" width="70%" /></div></div>
+      <p v-else class="text-sm text-(--color-content-muted)">Installation profile is unavailable.</p>
+    </UiCard>
+
     <UiCard title="Updates" description="Compare this installation with the latest published release.">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -53,7 +74,7 @@ onMounted(async () => {
             <p class="text-sm font-semibold">Installed {{ webVersion }}</p>
             <UiBadge v-if="updateAvailable" tone="warning" dot>Update available</UiBadge>
             <UiBadge v-else-if="latestVersion" tone="success" dot>Up to date</UiBadge>
-            <UiBadge v-else-if="checking" tone="neutral" dot>Checking</UiBadge>
+            <UiSkeleton v-else-if="checking" height="1.25rem" width="5rem" rounded="full" />
           </div>
           <p v-if="updateAvailable" class="mt-1 text-sm text-(--color-content-muted)">Release {{ latestVersion }} is ready to install.</p>
           <p v-else-if="latestVersion" class="mt-1 text-sm text-(--color-content-muted)">Latest release: {{ latestVersion }}</p>

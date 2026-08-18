@@ -92,12 +92,25 @@ defineExpose({ danger: props.danger })
     @click="onClick"
   >
     <div class="p-3.5 sm:p-4">
-      <h2 class="font-medium">
-        {{ title }}
-      </h2>
-      <p v-if="description" class="mt-1 text-sm text-(--color-content-muted)">
-        {{ description }}
-      </p>
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="font-semibold">
+            {{ title }}
+          </h2>
+          <p v-if="description" class="mt-1 text-sm text-(--color-content-muted)">
+            {{ description }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-md p-1.5 text-(--color-content-muted) transition-colors hover:bg-(--color-surface-muted) hover:text-(--color-content)"
+          aria-label="Close"
+          title="Close"
+          @click="open = false"
+        >
+          <Icon name="lucide:x" size="18" />
+        </button>
+      </div>
 
       <div v-if="$slots.default" class="mt-3">
         <slot />

@@ -20,6 +20,15 @@ WHERE LOWER(hostname) = LOWER(sqlc.arg(hostname)::text)
 -- name: ListDomains :many
 SELECT * FROM domains WHERE workspace_id = $1 ORDER BY is_default DESC, created_at ASC;
 
+-- name: ListDomainsPage :many
+SELECT * FROM domains
+WHERE workspace_id = sqlc.arg(workspace_id)
+ORDER BY is_default DESC, created_at ASC
+LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
+
+-- name: CountDomains :one
+SELECT count(*) FROM domains WHERE workspace_id = $1;
+
 -- name: ListActiveDomains :many
 SELECT * FROM domains WHERE status = 'active' ORDER BY hostname ASC;
 
@@ -48,6 +57,13 @@ UPDATE domains SET is_default = FALSE WHERE workspace_id = $1 AND is_default;
 
 -- name: SetDefaultDomain :one
 UPDATE domains SET is_default = TRUE WHERE id = $1 RETURNING *;
+
+-- name: UpdateDomainRootRedirect :one
+UPDATE domains
+SET root_redirect_url = sqlc.narg(root_redirect_url),
+    updated_at = now()
+WHERE id = sqlc.arg(id) AND workspace_id = sqlc.arg(workspace_id)
+RETURNING *;
 
 -- name: DeleteDomain :execrows
 DELETE FROM domains WHERE id = $1 AND workspace_id = $2;

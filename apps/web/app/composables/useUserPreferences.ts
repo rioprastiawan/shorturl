@@ -32,5 +32,6 @@ export function useUserPreferences() {
   const language = computed<Language>(() => session.user.value?.language || 'en')
   const timezone = computed(() => session.user.value?.timezone || 'UTC')
   const t = (key: MessageKey) => messages[language.value][key]
-  return { language, timezone, t }
+  const tr = (english: string, indonesian: string) => language.value === 'id' ? indonesian : english
+  return { language, timezone, t, tr }
 }

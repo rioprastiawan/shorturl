@@ -6,7 +6,7 @@ import { formatDateTime } from '~/components/links/format'
 import { ApiError } from '~/composables/useApi'
 import { useServices } from '~/services'
 
-definePageMeta({ middleware: 'auth' })
+definePageMeta({ middleware: ['auth', 'workspace-admin'] })
 
 useHead({ title: 'Domains · ShortURL' })
 
@@ -21,6 +21,9 @@ const canManage = computed(() => ws.role.value === 'owner' || ws.role.value === 
 const list = ref<Domain[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
+const page = ref(1)
+const pageSize = 10
+const total = ref(0)
 
 /** Keyed by domain ID. The list endpoint omits DNS instructions on purpose —
  *  it would hand out every verification token on a page people only skim — so
@@ -30,6 +33,15 @@ const expanded = ref<Record<string, boolean>>({})
 const fetchingInstructions = ref<Record<string, boolean>>({})
 const verifying = ref<Record<string, boolean>>({})
 const settingDefault = ref<Record<string, boolean>>({})
+const rootRedirectTarget = ref<Domain | null>(null)
+const rootRedirectMode = ref<'dashboard' | 'custom'>('dashboard')
+const rootRedirectUrl = ref('')
+const rootRedirectError = ref<string>()
+const savingRootRedirect = ref(false)
+const rootRedirectOptions = [
+  { value: 'dashboard', label: 'Dashboard' },
+  { value: 'custom', label: 'Custom URL' },
+]
 
 async function load() {
   const workspaceId = ws.activeId.value
@@ -40,8 +52,9 @@ async function load() {
   loading.value = true
   loadError.value = null
   try {
-    const res = await domains.list(workspaceId)
+    const res = await domains.list(workspaceId, { page: page.value, per_page: pageSize })
     list.value = res.data
+    total.value = res.meta.total ?? res.data.length
   } catch (error) {
     loadError.value = error instanceof ApiError ? error.message : 'Could not load domains.'
   } finally {
@@ -50,10 +63,17 @@ async function load() {
 }
 
 watch(() => ws.activeId.value, () => {
+  page.value = 1
   expanded.value = {}
   instructions.value = {}
   load()
 }, { immediate: true })
+
+watch(page, load)
+
+watch(total, (count) => {
+  page.value = Math.min(page.value, Math.max(1, Math.ceil(count / pageSize)))
+})
 
 function replaceDomain(next: Domain) {
   list.value = list.value.map(d => (d.id === next.id ? next : d))
@@ -107,7 +127,9 @@ async function addDomain() {
   addError.value = null
   try {
     const created = await domains.create(workspaceId, { hostname: value })
-    list.value = [created, ...list.value]
+    total.value++
+    page.value = created.is_default ? 1 : Math.max(1, Math.ceil(total.value / pageSize))
+    await load()
     if (created.dns_instructions) instructions.value[created.id] = created.dns_instructions
     // Straight into the records: creating the domain is step one of three.
     expanded.value[created.id] = true
@@ -171,6 +193,35 @@ async function makeDefault(domain: Domain) {
   }
 }
 
+function editRootRedirect(domain: Domain) {
+  rootRedirectTarget.value = domain
+  rootRedirectMode.value = domain.root_redirect_url ? 'custom' : 'dashboard'
+  rootRedirectUrl.value = domain.root_redirect_url ?? ''
+  rootRedirectError.value = undefined
+}
+
+async function saveRootRedirect() {
+  const workspaceId = ws.activeId.value
+  const target = rootRedirectTarget.value
+  if (!workspaceId || !target || savingRootRedirect.value) return
+  if (rootRedirectMode.value === 'custom' && !rootRedirectUrl.value.trim()) {
+    rootRedirectError.value = 'Enter the URL for this domain root.'
+    return
+  }
+  savingRootRedirect.value = true
+  rootRedirectError.value = undefined
+  try {
+    const updated = await domains.updateRootRedirect(workspaceId, target.id, rootRedirectMode.value === 'custom' ? rootRedirectUrl.value.trim() : null)
+    replaceDomain(updated)
+    rootRedirectTarget.value = null
+    toast.success(`Root redirect updated for ${target.hostname}`)
+  } catch (error) {
+    rootRedirectError.value = error instanceof ApiError ? (error.field('root_redirect_url') ?? error.message) : 'Could not update the root redirect.'
+  } finally {
+    savingRootRedirect.value = false
+  }
+}
+
 // --------------------------------------------------------------- delete
 
 const deleteTarget = ref<Domain | null>(null)
@@ -193,7 +244,9 @@ async function confirmDelete() {
   deleteError.value = null
   try {
     await domains.remove(workspaceId, target.id)
-    list.value = list.value.filter(d => d.id !== target.id)
+    total.value = Math.max(0, total.value - 1)
+    page.value = Math.min(page.value, Math.max(1, Math.ceil(total.value / pageSize)))
+    await load()
     toast.success(`Removed ${target.hostname}`)
     deleteOpen.value = false
     deleteTarget.value = null
@@ -233,7 +286,7 @@ async function confirmDelete() {
       description="Use a subdomain you control, such as go.example.com."
     >
       <form class="flex flex-wrap items-end gap-3" @submit.prevent="addDomain">
-        <div class="min-w-[16rem] flex-1">
+        <div class="min-w-0 flex-1 basis-full sm:basis-64">
           <UiInput
             v-model="hostname"
             label="Hostname"
@@ -243,7 +296,7 @@ async function confirmDelete() {
             :error="addError ?? undefined"
           />
         </div>
-        <UiButton type="submit" :loading="adding">
+        <UiButton class="w-full sm:w-auto" type="submit" :loading="adding">
           Add domain
         </UiButton>
       </form>
@@ -293,6 +346,7 @@ async function confirmDelete() {
               Added {{ formatDateTime(domain.created_at) }}
               <span v-if="domain.verified_at"> · verified {{ formatDateTime(domain.verified_at) }}</span>
             </p>
+            <p class="mt-1 flex items-center gap-1.5 text-xs text-(--color-content-muted)"><Icon name="lucide:corner-up-right" size="13" class="shrink-0" /><span class="truncate">Root redirects to {{ domain.root_redirect_url || 'the dashboard' }}</span></p>
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
@@ -316,6 +370,14 @@ async function confirmDelete() {
               @click="makeDefault(domain)"
             >
               Set as default
+            </UiButton>
+            <UiButton
+              v-if="canManage"
+              variant="ghost"
+              size="sm"
+              @click="editRootRedirect(domain)"
+            >
+              Root redirect
             </UiButton>
             <UiButton
               v-if="canManage"
@@ -359,7 +421,27 @@ async function confirmDelete() {
           </p>
         </div>
       </UiCard>
+      <div class="overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-raised)">
+        <UiPagination v-model:page="page" :total="total" :page-size="pageSize" label="domains" />
+      </div>
     </div>
+
+    <UiModal
+      :model-value="rootRedirectTarget !== null"
+      title="Root domain redirect"
+      :description="rootRedirectTarget ? `Choose where https://${rootRedirectTarget.hostname}/ sends visitors when no short-link slug is provided.` : undefined"
+      @update:model-value="open => { if (!open) rootRedirectTarget = null }"
+    >
+      <div class="flex flex-col gap-4">
+        <UiSelect v-model="rootRedirectMode" label="Destination" :options="rootRedirectOptions" :disabled="savingRootRedirect" />
+        <UiInput v-if="rootRedirectMode === 'custom'" v-model="rootRedirectUrl" label="Custom URL" type="url" placeholder="https://www.example.com" required :disabled="savingRootRedirect" :error="rootRedirectError" hint="Must be a complete HTTP or HTTPS URL." />
+        <p v-else class="rounded-lg bg-(--color-surface-muted) p-3 text-sm text-(--color-content-muted)">Visitors will be sent to the ShortURL dashboard, matching the default behavior.</p>
+      </div>
+      <template #actions>
+        <UiButton variant="secondary" :disabled="savingRootRedirect" @click="rootRedirectTarget = null">Cancel</UiButton>
+        <UiButton :loading="savingRootRedirect" @click="saveRootRedirect">Save redirect</UiButton>
+      </template>
+    </UiModal>
 
     <UiModal
       v-model="deleteOpen"

@@ -87,7 +87,7 @@ function deleteTheme(theme: CustomTheme) {
 
     <div v-if="editor" class="rounded-xl border border-(--color-border) bg-(--color-surface-muted)/45 p-4">
       <div class="flex flex-wrap items-end gap-3">
-        <div class="min-w-52 flex-1"><UiInput v-model="editor.name" label="Theme name" maxlength="40" /></div>
+        <div class="min-w-0 flex-1 basis-full sm:basis-52"><UiInput v-model="editor.name" label="Theme name" maxlength="40" /></div>
         <div class="grid grid-cols-2 gap-1 rounded-lg border border-(--color-border) bg-(--color-surface-raised) p-1">
           <button v-for="mode in (['light', 'dark'] as const)" :key="mode" type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold capitalize" :class="paletteMode === mode ? 'bg-(--color-accent) text-(--color-accent-content)' : 'text-(--color-content-muted)'" @click="paletteMode = mode">
             <Icon :name="mode === 'light' ? 'lucide:sun' : 'lucide:moon'" size="14" class="mr-1 inline" />{{ mode }}
@@ -95,14 +95,11 @@ function deleteTheme(theme: CustomTheme) {
         </div>
       </div>
 
-      <div class="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        <label v-for="token in THEME_TOKENS" :key="token.key" class="flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--color-surface-raised) p-2">
-          <input v-model="editor[paletteMode][token.key]" type="color" class="size-8 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0" :aria-label="token.label">
-          <span class="min-w-0 flex-1"><span class="block truncate text-xs font-medium">{{ token.label }}</span><span class="block font-mono text-[10px] text-(--color-content-subtle)">{{ editor[paletteMode][token.key] }}</span></span>
-        </label>
+      <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <UiColorPicker v-for="token in THEME_TOKENS" :key="token.key" v-model="editor[paletteMode][token.key]" :label="token.label" />
       </div>
 
-      <div class="mt-4 flex justify-end gap-2">
+      <div class="mt-4 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
         <UiButton variant="secondary" @click="editor = null">Cancel</UiButton>
         <UiButton @click="saveTheme">Save & apply</UiButton>
       </div>

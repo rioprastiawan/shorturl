@@ -48,20 +48,24 @@ function legacyCopy(text: string) {
       class="min-w-0 flex-1 truncate rounded-l-md border border-r-0 border-(--color-border-strong) bg-(--color-surface-muted) px-3 py-2 font-mono text-xs"
     >{{ value }}</code>
     <button
-      class="shrink-0 rounded-r-md border border-(--color-border-strong) px-3 text-xs font-medium transition-colors hover:bg-(--color-surface-muted)"
+      class="grid w-10 shrink-0 place-items-center rounded-r-md border border-(--color-border-strong) text-(--color-content-muted) transition-colors hover:bg-(--color-surface-muted) hover:text-(--color-content)"
       type="button"
+      :aria-label="copied ? 'Copied' : label"
+      :title="copied ? 'Copied' : label"
       @click="copy"
     >
-      {{ copied ? 'Copied' : label }}
+      <Icon :name="copied ? 'lucide:check' : 'lucide:copy'" size="15" />
     </button>
   </div>
 
   <button
     v-else
     type="button"
-    class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-(--color-content-muted) transition-colors hover:bg-(--color-surface-muted) hover:text-(--color-content)"
+    class="inline-grid size-8 shrink-0 place-items-center rounded-md text-(--color-content-muted) transition-colors hover:bg-(--color-surface-muted) hover:text-(--color-content)"
+    :aria-label="copied ? 'Copied' : label"
+    :title="copied ? 'Copied' : label"
     @click="copy"
   >
-    {{ copied ? 'Copied' : label }}
+    <Icon :name="copied ? 'lucide:check' : 'lucide:copy'" size="15" />
   </button>
 </template>

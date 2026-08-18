@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"net/url"
 	"strings"
 	"time"
 
@@ -61,14 +62,17 @@ const (
 // database. *store.Queries satisfies it.
 type Store interface {
 	ClearDefaultDomain(ctx context.Context, workspaceID uuid.UUID) error
+	CountDomains(ctx context.Context, workspaceID uuid.UUID) (int64, error)
+	CountLinksForDomain(ctx context.Context, domainID uuid.UUID) (int64, error)
 	CreateDomain(ctx context.Context, arg store.CreateDomainParams) (store.Domain, error)
 	DeleteDomain(ctx context.Context, arg store.DeleteDomainParams) (int64, error)
 	GetDomainInWorkspace(ctx context.Context, arg store.GetDomainInWorkspaceParams) (store.Domain, error)
 	ListActiveDomains(ctx context.Context) ([]store.Domain, error)
 	ListDomainHostnamesForWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]string, error)
-	ListDomains(ctx context.Context, workspaceID uuid.UUID) ([]store.Domain, error)
+	ListDomainsPage(ctx context.Context, arg store.ListDomainsPageParams) ([]store.Domain, error)
 	ListLinksForDomain(ctx context.Context, domainID uuid.UUID) ([]store.ListLinksForDomainRow, error)
 	SetDefaultDomain(ctx context.Context, id uuid.UUID) (store.Domain, error)
+	UpdateDomainRootRedirect(ctx context.Context, arg store.UpdateDomainRootRedirectParams) (store.Domain, error)
 	UpdateDomainVerification(ctx context.Context, arg store.UpdateDomainVerificationParams) (store.Domain, error)
 }
 
@@ -143,13 +147,21 @@ func (s *Service) Add(ctx context.Context, workspaceID uuid.UUID, hostname strin
 	return d, nil
 }
 
-// List returns every domain in the workspace, default first.
-func (s *Service) List(ctx context.Context, workspaceID uuid.UUID) ([]store.Domain, error) {
-	domains, err := s.q.ListDomains(ctx, workspaceID)
+// List returns one page of domains in the workspace, default first.
+func (s *Service) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]store.Domain, int64, error) {
+	total, err := s.q.CountDomains(ctx, workspaceID)
 	if err != nil {
-		return nil, httpx.Internal(err)
+		return nil, 0, httpx.Internal(err)
 	}
-	return domains, nil
+	domains, err := s.q.ListDomainsPage(ctx, store.ListDomainsPageParams{
+		WorkspaceID: workspaceID,
+		PageLimit:   int32(limit),
+		PageOffset:  int32(offset),
+	})
+	if err != nil {
+		return nil, 0, httpx.Internal(err)
+	}
+	return domains, total, nil
 }
 
 // Get returns one domain, scoped to the workspace so an ID from another tenant
@@ -166,6 +178,41 @@ func (s *Service) Get(ctx context.Context, workspaceID, domainID uuid.UUID) (sto
 		return store.Domain{}, httpx.Internal(err)
 	}
 	return d, nil
+}
+
+// UpdateRootRedirect configures where the bare hostname points. A nil URL
+// restores the installation dashboard fallback.
+func (s *Service) UpdateRootRedirect(ctx context.Context, workspaceID, domainID uuid.UUID, raw *string) (store.Domain, error) {
+	d, err := s.Get(ctx, workspaceID, domainID)
+	if err != nil {
+		return store.Domain{}, err
+	}
+
+	var destination *string
+	if raw != nil && strings.TrimSpace(*raw) != "" {
+		normalized, validationErr := urlx.ValidateDestination(*raw)
+		if validationErr != nil {
+			return store.Domain{}, httpx.Invalid(map[string][]string{"root_redirect_url": {validationErr.Error()}})
+		}
+		parsed, _ := url.Parse(normalized)
+		if urlx.NormalizeHostname(parsed.Host) == d.Hostname && strings.Trim(parsed.Path, "/") == "" {
+			return store.Domain{}, httpx.Invalid(map[string][]string{"root_redirect_url": {"must not point back to this domain root"}})
+		}
+		destination = &normalized
+	}
+
+	updated, err := s.q.UpdateDomainRootRedirect(ctx, store.UpdateDomainRootRedirectParams{
+		ID:              domainID,
+		WorkspaceID:     workspaceID,
+		RootRedirectUrl: destination,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.Domain{}, httpx.ErrNotFound
+	}
+	if err != nil {
+		return store.Domain{}, httpx.Internal(err)
+	}
+	return updated, nil
 }
 
 // Verify runs both DNS checks and records the outcome. It never returns an
@@ -258,14 +305,14 @@ func (s *Service) Delete(ctx context.Context, workspaceID, domainID uuid.UUID) e
 
 	// The foreign key cascades, so without this check deleting a domain would
 	// silently destroy every short link published on it.
-	links, err := s.q.ListLinksForDomain(ctx, d.ID)
+	linkCount, err := s.q.CountLinksForDomain(ctx, d.ID)
 	if err != nil {
 		return httpx.Internal(err)
 	}
-	if n := len(links); n > 0 {
+	if linkCount > 0 {
 		return httpx.Conflictf("domain_has_links",
-			"%s still has %d %s. Delete or move them before removing the domain.",
-			d.Hostname, n, plural(n, "link", "links"))
+			"%s still has %d links. Delete or move them before removing the domain.",
+			d.Hostname, linkCount)
 	}
 
 	rows, err := s.q.DeleteDomain(ctx, store.DeleteDomainParams{ID: d.ID, WorkspaceID: workspaceID})

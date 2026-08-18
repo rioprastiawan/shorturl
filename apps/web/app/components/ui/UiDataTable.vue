@@ -25,8 +25,8 @@ function keyFor(row: T): string | number {
 </script>
 
 <template>
-  <div>
-    <div class="overflow-x-auto">
+  <div class="min-w-0 max-w-full">
+    <div class="w-full max-w-full overflow-x-auto overscroll-x-contain">
       <table class="w-full text-left text-sm" :style="{ minWidth }">
         <thead>
           <tr class="border-b border-(--color-border) bg-(--color-surface-muted)/45 text-xs uppercase tracking-wide text-(--color-content-subtle)">
@@ -53,6 +53,8 @@ function keyFor(row: T): string | number {
         </tbody>
       </table>
     </div>
-    <slot name="footer" />
+    <div class="min-w-0 max-w-full overflow-hidden">
+      <slot name="footer" />
+    </div>
   </div>
 </template>

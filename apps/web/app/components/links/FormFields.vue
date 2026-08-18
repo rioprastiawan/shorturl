@@ -26,6 +26,11 @@ const props = withDefaults(defineProps<{
 })
 
 const model = defineModel<LinkFormModel>({ required: true })
+const advancedExpanded = ref(props.advancedOpen)
+
+watch(() => props.advancedOpen, value => {
+  if (value) advancedExpanded.value = true
+})
 
 const selectedDomain = computed(() =>
   props.domains.find(d => d.id === model.value.domain_id) ?? props.domains[0] ?? null)
@@ -90,21 +95,14 @@ const domainOptions = computed(() => props.domains.map(domain => ({
         maxlength="1000"
         :disabled="disabled"
         placeholder="Campaign context, owner, or anything teammates should know…"
-        class="w-full resize-y rounded-md border border-(--color-border) bg-(--color-surface-raised) px-3 py-2 text-sm outline-none transition-colors placeholder:text-(--color-content-subtle) focus:border-(--color-accent) disabled:opacity-60"
+        class="w-full resize-y rounded-md border border-(--color-border-strong) bg-(--color-surface-raised) px-3 py-2 text-sm shadow-sm transition-[border-color,box-shadow,transform] placeholder:text-(--color-content-subtle) hover:border-(--color-content-subtle) focus:-translate-y-px focus:shadow-md disabled:opacity-60"
       />
       <p class="mt-1 text-xs text-(--color-content-muted)">Only visible to workspace members.</p>
     </div>
 
     <!-- The common case is three fields; everything else is opt-in. -->
-    <details
-      class="rounded-md border border-(--color-border) bg-(--color-surface-muted) px-4 py-3"
-      :open="advancedOpen"
-    >
-      <summary class="cursor-pointer text-sm font-medium">
-        Advanced options
-      </summary>
-
-      <div class="mt-4 flex flex-col gap-4">
+    <UiDisclosure v-model="advancedExpanded" title="Advanced options" description="Configure redirect behavior, expiration, password protection, and click limits." icon="lucide:sliders-horizontal">
+      <div class="flex flex-col gap-4">
         <UiSelect
           v-model="model.redirect_type"
           label="Redirect type"
@@ -122,10 +120,9 @@ const domainOptions = computed(() => props.domains.map(domain => ({
           :error="errors.expires_at"
         />
 
-        <UiInput
+        <UiPasswordInput
           v-model="model.password"
           label="Password"
-          type="password"
           autocomplete="new-password"
           :disabled="disabled || model.remove_password"
           :placeholder="hasPassword ? 'Type a new password to replace the current one' : undefined"
@@ -149,6 +146,6 @@ const domainOptions = computed(() => props.domains.map(domain => ({
           :error="errors.max_clicks"
         />
       </div>
-    </details>
+    </UiDisclosure>
   </div>
 </template>

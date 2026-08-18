@@ -101,17 +101,17 @@ const weekdaysOption = computed<EChartsCoreOption>(() => ({
 </script>
 
 <template>
-  <section class="grid gap-4 lg:grid-cols-2" aria-label="Analytics visual insights">
-    <UiCard v-if="topLinks.length" title="Top links by clicks">
+  <section class="grid min-w-0 max-w-full gap-4 [&>*]:min-w-0 [&>*]:max-w-full lg:grid-cols-2" aria-label="Analytics visual insights">
+    <UiCard v-if="topLinks.length" class="overflow-hidden" title="Top links by clicks">
       <AnalyticsEChart :option="topLinksOption" height="19rem" label="Horizontal bar chart of top links by clicks" />
     </UiCard>
-    <UiCard v-if="devices.length" title="Device share">
+    <UiCard v-if="devices.length" class="overflow-hidden" title="Device share">
       <AnalyticsEChart :option="devicesOption" height="19rem" label="Donut chart of clicks by device" />
     </UiCard>
-    <UiCard v-if="hours.length" title="Traffic by hour">
+    <UiCard v-if="hours.length" class="overflow-hidden" title="Traffic by hour">
       <AnalyticsEChart :option="hoursOption" height="20rem" label="Polar bar chart of traffic by hour" />
     </UiCard>
-    <UiCard v-if="weekdays.length" title="Traffic by weekday">
+    <UiCard v-if="weekdays.length" class="overflow-hidden" title="Traffic by weekday">
       <AnalyticsEChart :option="weekdaysOption" height="20rem" label="Bar chart of traffic by weekday" />
     </UiCard>
   </section>

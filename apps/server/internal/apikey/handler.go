@@ -1,10 +1,13 @@
 package apikey
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/rioprastiawan/shorturl/apps/server/internal/authctx"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/httpx"
@@ -12,11 +15,22 @@ import (
 
 // Handler is the dashboard-facing key management surface.
 type Handler struct {
-	svc *Service
+	svc   *Service
+	audit AuditRecorder
+}
+
+type AuditRecorder interface {
+	RecordAudit(context.Context, uuid.UUID, *uuid.UUID, string, string, uuid.UUID, string, json.RawMessage)
 }
 
 // NewHandler builds the handler.
-func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
+func NewHandler(svc *Service, recorders ...AuditRecorder) *Handler {
+	h := &Handler{svc: svc}
+	if len(recorders) > 0 {
+		h.audit = recorders[0]
+	}
+	return h
+}
 
 // Routes registers key management. The orchestrator mounts it at
 // /workspaces/{workspaceId}/api-keys behind the session and workspace
@@ -77,6 +91,9 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	if h.audit != nil {
+		h.audit.RecordAudit(r.Context(), m.WorkspaceID, &m.UserID, "api_key.created", "api_key", key.ID, key.Name, nil)
+	}
 	httpx.Data(w, http.StatusCreated, newCreatedDTO(key, plaintext))
 }
 
@@ -93,9 +110,22 @@ func (h *Handler) revoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	keys, _, listErr := h.svc.List(r.Context(), m.WorkspaceID, "", 100)
+	label := id.String()
+	if listErr == nil {
+		for _, key := range keys {
+			if key.ID == id {
+				label = key.Name
+				break
+			}
+		}
+	}
 	if err := h.svc.Revoke(r.Context(), m.WorkspaceID, id); err != nil {
 		httpx.Error(w, r, err)
 		return
+	}
+	if h.audit != nil {
+		h.audit.RecordAudit(r.Context(), m.WorkspaceID, &m.UserID, "api_key.revoked", "api_key", id, label, nil)
 	}
 	httpx.NoContent(w)
 }

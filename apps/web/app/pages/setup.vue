@@ -263,10 +263,9 @@ async function submit() {
           required
           :error="errors.email"
         />
-        <UiInput
+        <UiPasswordInput
           v-model="form.password"
           label="Password"
-          type="password"
           autocomplete="new-password"
           required
           hint="At least 10 characters"

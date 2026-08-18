@@ -28,6 +28,10 @@ type addRequest struct {
 	Hostname string `json:"hostname"`
 }
 
+type updateRootRedirectRequest struct {
+	RootRedirectURL *string `json:"root_redirect_url"`
+}
+
 // domainResponse is the wire shape of a domain.
 //
 // DNSInstructions is omitted from list responses because it carries the
@@ -39,6 +43,7 @@ type domainResponse struct {
 	Status             string           `json:"status"`
 	SSLStatus          string           `json:"ssl_status"`
 	IsDefault          bool             `json:"is_default"`
+	RootRedirectURL    *string          `json:"root_redirect_url"`
 	VerificationMethod string           `json:"verification_method"`
 	VerificationError  *string          `json:"verification_error"`
 	VerifiedAt         *time.Time       `json:"verified_at"`
@@ -53,6 +58,7 @@ func newDomainResponse(d store.Domain) domainResponse {
 		Status:             d.Status,
 		SSLStatus:          d.SslStatus,
 		IsDefault:          d.IsDefault,
+		RootRedirectURL:    d.RootRedirectUrl,
 		VerificationMethod: d.VerificationMethod,
 		VerificationError:  d.VerificationError,
 		VerifiedAt:         d.VerifiedAt,

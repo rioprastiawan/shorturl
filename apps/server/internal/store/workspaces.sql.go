@@ -49,7 +49,9 @@ func (q *Queries) CountWorkspaceMembers(ctx context.Context, workspaceID uuid.UU
 }
 
 const countWorkspacesForUser = `-- name: CountWorkspacesForUser :one
-SELECT count(*) FROM workspace_members WHERE user_id = $1
+SELECT count(*) FROM workspace_members
+JOIN workspaces ON workspaces.id = workspace_members.workspace_id
+WHERE workspace_members.user_id = $1 AND workspaces.deletion_requested_at IS NULL
 `
 
 func (q *Queries) CountWorkspacesForUser(ctx context.Context, userID uuid.UUID) (int64, error) {
@@ -62,7 +64,7 @@ func (q *Queries) CountWorkspacesForUser(ctx context.Context, userID uuid.UUID) 
 const createWorkspace = `-- name: CreateWorkspace :one
 INSERT INTO workspaces (name, slug, owner_user_id)
 VALUES ($1, $2, $3)
-RETURNING id, name, slug, owner_user_id, created_at, updated_at
+RETURNING id, name, slug, owner_user_id, created_at, updated_at, deletion_requested_at
 `
 
 type CreateWorkspaceParams struct {
@@ -81,21 +83,13 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.OwnerUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletionRequestedAt,
 	)
 	return i, err
 }
 
-const deleteWorkspace = `-- name: DeleteWorkspace :exec
-DELETE FROM workspaces WHERE id = $1
-`
-
-func (q *Queries) DeleteWorkspace(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteWorkspace, id)
-	return err
-}
-
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT id, name, slug, owner_user_id, created_at, updated_at FROM workspaces WHERE id = $1
+SELECT id, name, slug, owner_user_id, created_at, updated_at, deletion_requested_at FROM workspaces WHERE id = $1 AND deletion_requested_at IS NULL
 `
 
 func (q *Queries) GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error) {
@@ -108,12 +102,14 @@ func (q *Queries) GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, er
 		&i.OwnerUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletionRequestedAt,
 	)
 	return i, err
 }
 
 const getWorkspaceBySlug = `-- name: GetWorkspaceBySlug :one
-SELECT id, name, slug, owner_user_id, created_at, updated_at FROM workspaces WHERE LOWER(slug) = LOWER($1::text)
+SELECT id, name, slug, owner_user_id, created_at, updated_at, deletion_requested_at FROM workspaces WHERE LOWER(slug) = LOWER($1::text)
+  AND deletion_requested_at IS NULL
 `
 
 func (q *Queries) GetWorkspaceBySlug(ctx context.Context, slug string) (Workspace, error) {
@@ -126,6 +122,7 @@ func (q *Queries) GetWorkspaceBySlug(ctx context.Context, slug string) (Workspac
 		&i.OwnerUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletionRequestedAt,
 	)
 	return i, err
 }
@@ -159,9 +156,11 @@ SELECT
     workspace_members.role,
     workspace_members.created_at,
     users.name,
-    users.email
+    users.email,
+    coalesce(user_two_factor.enabled, false)::boolean AS two_factor_enabled
 FROM workspace_members
 JOIN users ON users.id = workspace_members.user_id
+LEFT JOIN user_two_factor ON user_two_factor.user_id = users.id
 WHERE workspace_members.workspace_id = $1
 ORDER BY
     CASE workspace_members.role
@@ -180,12 +179,13 @@ type ListWorkspaceMembersParams struct {
 }
 
 type ListWorkspaceMembersRow struct {
-	WorkspaceID uuid.UUID
-	UserID      uuid.UUID
-	Role        string
-	CreatedAt   time.Time
-	Name        string
-	Email       string
+	WorkspaceID      uuid.UUID
+	UserID           uuid.UUID
+	Role             string
+	CreatedAt        time.Time
+	Name             string
+	Email            string
+	TwoFactorEnabled bool
 }
 
 func (q *Queries) ListWorkspaceMembers(ctx context.Context, arg ListWorkspaceMembersParams) ([]ListWorkspaceMembersRow, error) {
@@ -204,6 +204,7 @@ func (q *Queries) ListWorkspaceMembers(ctx context.Context, arg ListWorkspaceMem
 			&i.CreatedAt,
 			&i.Name,
 			&i.Email,
+			&i.TwoFactorEnabled,
 		); err != nil {
 			return nil, err
 		}
@@ -217,11 +218,12 @@ func (q *Queries) ListWorkspaceMembers(ctx context.Context, arg ListWorkspaceMem
 
 const listWorkspacesForUser = `-- name: ListWorkspacesForUser :many
 SELECT
-    workspaces.id, workspaces.name, workspaces.slug, workspaces.owner_user_id, workspaces.created_at, workspaces.updated_at,
+    workspaces.id, workspaces.name, workspaces.slug, workspaces.owner_user_id, workspaces.created_at, workspaces.updated_at, workspaces.deletion_requested_at,
     workspace_members.role
 FROM workspaces
 JOIN workspace_members ON workspace_members.workspace_id = workspaces.id
 WHERE workspace_members.user_id = $1
+  AND workspaces.deletion_requested_at IS NULL
 ORDER BY workspaces.created_at ASC
 `
 
@@ -246,6 +248,74 @@ func (q *Queries) ListWorkspacesForUser(ctx context.Context, userID uuid.UUID) (
 			&i.Workspace.OwnerUserID,
 			&i.Workspace.CreatedAt,
 			&i.Workspace.UpdatedAt,
+			&i.Workspace.DeletionRequestedAt,
+			&i.Role,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkspacesForUserPage = `-- name: ListWorkspacesForUserPage :many
+SELECT
+    workspaces.id, workspaces.name, workspaces.slug, workspaces.owner_user_id, workspaces.created_at, workspaces.updated_at, workspaces.deletion_requested_at,
+    workspace_members.role
+FROM workspaces
+JOIN workspace_members ON workspace_members.workspace_id = workspaces.id
+WHERE workspace_members.user_id = $1
+  AND workspaces.deletion_requested_at IS NULL
+  AND ($2::text = '' OR workspaces.name ILIKE '%' || $2::text || '%')
+  AND (
+    NOT $3::boolean
+    OR (workspaces.created_at, workspaces.id) > ($4::timestamptz, $5::uuid)
+  )
+ORDER BY workspaces.created_at ASC, workspaces.id ASC
+LIMIT $6
+`
+
+type ListWorkspacesForUserPageParams struct {
+	UserID          uuid.UUID
+	Search          string
+	HasCursor       bool
+	CursorCreatedAt time.Time
+	CursorID        uuid.UUID
+	PageLimit       int32
+}
+
+type ListWorkspacesForUserPageRow struct {
+	Workspace Workspace
+	Role      string
+}
+
+func (q *Queries) ListWorkspacesForUserPage(ctx context.Context, arg ListWorkspacesForUserPageParams) ([]ListWorkspacesForUserPageRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspacesForUserPage,
+		arg.UserID,
+		arg.Search,
+		arg.HasCursor,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkspacesForUserPageRow{}
+	for rows.Next() {
+		var i ListWorkspacesForUserPageRow
+		if err := rows.Scan(
+			&i.Workspace.ID,
+			&i.Workspace.Name,
+			&i.Workspace.Slug,
+			&i.Workspace.OwnerUserID,
+			&i.Workspace.CreatedAt,
+			&i.Workspace.UpdatedAt,
+			&i.Workspace.DeletionRequestedAt,
 			&i.Role,
 		); err != nil {
 			return nil, err
@@ -275,8 +345,28 @@ func (q *Queries) RemoveWorkspaceMember(ctx context.Context, arg RemoveWorkspace
 	return result.RowsAffected(), nil
 }
 
+const requestWorkspaceDeletion = `-- name: RequestWorkspaceDeletion :execrows
+WITH requested AS (
+    UPDATE workspaces
+    SET deletion_requested_at = now()
+    WHERE workspaces.id = $1 AND deletion_requested_at IS NULL
+    RETURNING id
+)
+INSERT INTO deletion_jobs (resource_type, resource_id, workspace_id, not_before)
+SELECT 'workspace', requested.id, requested.id, now() + interval '5 minutes' FROM requested
+ON CONFLICT (resource_type, resource_id) DO NOTHING
+`
+
+func (q *Queries) RequestWorkspaceDeletion(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, requestWorkspaceDeletion, workspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateWorkspace = `-- name: UpdateWorkspace :one
-UPDATE workspaces SET name = $2 WHERE id = $1 RETURNING id, name, slug, owner_user_id, created_at, updated_at
+UPDATE workspaces SET name = $2 WHERE id = $1 AND deletion_requested_at IS NULL RETURNING id, name, slug, owner_user_id, created_at, updated_at, deletion_requested_at
 `
 
 type UpdateWorkspaceParams struct {
@@ -294,6 +384,7 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.OwnerUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletionRequestedAt,
 	)
 	return i, err
 }

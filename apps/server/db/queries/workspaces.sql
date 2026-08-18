@@ -4,10 +4,11 @@ VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: GetWorkspace :one
-SELECT * FROM workspaces WHERE id = $1;
+SELECT * FROM workspaces WHERE id = $1 AND deletion_requested_at IS NULL;
 
 -- name: GetWorkspaceBySlug :one
-SELECT * FROM workspaces WHERE LOWER(slug) = LOWER(sqlc.arg(slug)::text);
+SELECT * FROM workspaces WHERE LOWER(slug) = LOWER(sqlc.arg(slug)::text)
+  AND deletion_requested_at IS NULL;
 
 -- name: ListWorkspacesForUser :many
 SELECT
@@ -16,16 +17,43 @@ SELECT
 FROM workspaces
 JOIN workspace_members ON workspace_members.workspace_id = workspaces.id
 WHERE workspace_members.user_id = $1
+  AND workspaces.deletion_requested_at IS NULL
 ORDER BY workspaces.created_at ASC;
 
--- name: UpdateWorkspace :one
-UPDATE workspaces SET name = $2 WHERE id = $1 RETURNING *;
+-- name: ListWorkspacesForUserPage :many
+SELECT
+    sqlc.embed(workspaces),
+    workspace_members.role
+FROM workspaces
+JOIN workspace_members ON workspace_members.workspace_id = workspaces.id
+WHERE workspace_members.user_id = sqlc.arg(user_id)
+  AND workspaces.deletion_requested_at IS NULL
+  AND (sqlc.arg(search)::text = '' OR workspaces.name ILIKE '%' || sqlc.arg(search)::text || '%')
+  AND (
+    NOT sqlc.arg(has_cursor)::boolean
+    OR (workspaces.created_at, workspaces.id) > (sqlc.arg(cursor_created_at)::timestamptz, sqlc.arg(cursor_id)::uuid)
+  )
+ORDER BY workspaces.created_at ASC, workspaces.id ASC
+LIMIT sqlc.arg(page_limit);
 
--- name: DeleteWorkspace :exec
-DELETE FROM workspaces WHERE id = $1;
+-- name: UpdateWorkspace :one
+UPDATE workspaces SET name = $2 WHERE id = $1 AND deletion_requested_at IS NULL RETURNING *;
+
+-- name: RequestWorkspaceDeletion :execrows
+WITH requested AS (
+    UPDATE workspaces
+    SET deletion_requested_at = now()
+    WHERE workspaces.id = sqlc.arg(workspace_id) AND deletion_requested_at IS NULL
+    RETURNING id
+)
+INSERT INTO deletion_jobs (resource_type, resource_id, workspace_id, not_before)
+SELECT 'workspace', requested.id, requested.id, now() + interval '5 minutes' FROM requested
+ON CONFLICT (resource_type, resource_id) DO NOTHING;
 
 -- name: CountWorkspacesForUser :one
-SELECT count(*) FROM workspace_members WHERE user_id = $1;
+SELECT count(*) FROM workspace_members
+JOIN workspaces ON workspaces.id = workspace_members.workspace_id
+WHERE workspace_members.user_id = $1 AND workspaces.deletion_requested_at IS NULL;
 
 
 -- name: AddWorkspaceMember :one
@@ -43,9 +71,11 @@ SELECT
     workspace_members.role,
     workspace_members.created_at,
     users.name,
-    users.email
+    users.email,
+    coalesce(user_two_factor.enabled, false)::boolean AS two_factor_enabled
 FROM workspace_members
 JOIN users ON users.id = workspace_members.user_id
+LEFT JOIN user_two_factor ON user_two_factor.user_id = users.id
 WHERE workspace_members.workspace_id = $1
 ORDER BY
     CASE workspace_members.role

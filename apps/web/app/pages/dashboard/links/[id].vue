@@ -382,6 +382,7 @@ async function confirmDelete() {
           <p class="mt-1 text-xs text-(--color-content-subtle)">
             Created {{ formatDateTime(link.created_at) }}
             <span v-if="link.created_via === 'api'"> · via API</span>
+            <span v-else> · by {{ link.created_by_name || 'Deleted user' }}</span>
             <span v-if="link.expires_at"> · expires {{ formatDateTime(link.expires_at) }}</span>
             <span v-if="link.max_clicks"> · limit {{ formatNumber(link.max_clicks) }} clicks</span>
             <span v-if="link.has_password"> · password protected</span>
@@ -389,6 +390,7 @@ async function confirmDelete() {
         </div>
 
         <UiButton
+          class="w-full sm:w-auto"
           variant="secondary"
           :loading="togglingStatus"
           @click="toggleStatus"

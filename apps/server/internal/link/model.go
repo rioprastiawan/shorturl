@@ -14,8 +14,10 @@ import (
 // View is a link joined with its hostname, which is what every caller
 // actually wants: a link is meaningless without the domain it lives on.
 type View struct {
-	Link     store.Link
-	Hostname string
+	Link           store.Link
+	Hostname       string
+	CreatedByName  *string
+	CreatedByEmail *string
 }
 
 // ShortURL is the value integrations care about most.
@@ -42,6 +44,8 @@ type DTO struct {
 	ExternalReference *string         `json:"external_reference"`
 	Metadata          json.RawMessage `json:"metadata,omitempty"`
 	CreatedVia        string          `json:"created_via"`
+	CreatedByName     *string         `json:"created_by_name"`
+	CreatedByEmail    *string         `json:"created_by_email"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
 }
@@ -64,6 +68,8 @@ func ToDTO(v View) DTO {
 		ClickCount:        v.Link.ClickCount,
 		ExternalReference: v.Link.ExternalReference,
 		CreatedVia:        v.Link.CreatedVia,
+		CreatedByName:     v.CreatedByName,
+		CreatedByEmail:    v.CreatedByEmail,
 		CreatedAt:         v.Link.CreatedAt,
 		UpdatedAt:         v.Link.UpdatedAt,
 	}

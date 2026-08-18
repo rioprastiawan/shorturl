@@ -35,11 +35,12 @@ type WorkspaceWithRole struct {
 
 // Member is a workspace membership joined with the user it refers to.
 type Member struct {
-	UserID    uuid.UUID
-	Name      string
-	Email     string
-	Role      authctx.Role
-	CreatedAt time.Time
+	UserID           uuid.UUID
+	Name             string
+	Email            string
+	Role             authctx.Role
+	TwoFactorEnabled bool
+	CreatedAt        time.Time
 }
 
 // DTO is the public shape of a workspace.
@@ -64,21 +65,23 @@ func NewDTO(ws *store.Workspace, role authctx.Role) DTO {
 
 // MemberDTO is the public shape of a workspace member.
 type MemberDTO struct {
-	UserID    uuid.UUID    `json:"user_id"`
-	Name      string       `json:"name"`
-	Email     string       `json:"email"`
-	Role      authctx.Role `json:"role"`
-	CreatedAt time.Time    `json:"created_at"`
+	UserID           uuid.UUID    `json:"user_id"`
+	Name             string       `json:"name"`
+	Email            string       `json:"email"`
+	Role             authctx.Role `json:"role"`
+	TwoFactorEnabled bool         `json:"two_factor_enabled"`
+	CreatedAt        time.Time    `json:"created_at"`
 }
 
 // NewMemberDTO projects a member onto the public shape.
 func NewMemberDTO(m Member) MemberDTO {
 	return MemberDTO{
-		UserID:    m.UserID,
-		Name:      m.Name,
-		Email:     m.Email,
-		Role:      m.Role,
-		CreatedAt: m.CreatedAt,
+		UserID:           m.UserID,
+		Name:             m.Name,
+		Email:            m.Email,
+		Role:             m.Role,
+		TwoFactorEnabled: m.TwoFactorEnabled,
+		CreatedAt:        m.CreatedAt,
 	}
 }
 

@@ -169,15 +169,29 @@
 }
 
 .mobile-dashboard-nav .mobile-bottom-link {
-  color: var(--color-shell-content-muted);
+  color: var(--color-content-muted);
 }
 
 .mobile-dashboard-nav .mobile-bottom-link:hover {
+  color: var(--color-content);
+  background-color: var(--color-surface-muted);
+}
+
+.mobile-dashboard-nav .mobile-bottom-link.is-active {
+  color: var(--color-accent);
+  background-color: var(--color-surface-muted);
+}
+
+.dark .mobile-dashboard-nav .mobile-bottom-link {
+  color: var(--color-shell-content-muted);
+}
+
+.dark .mobile-dashboard-nav .mobile-bottom-link:hover {
   color: var(--color-shell-content-hover);
   background-color: var(--color-shell-hover);
 }
 
-.mobile-dashboard-nav .mobile-bottom-link.is-active {
+.dark .mobile-dashboard-nav .mobile-bottom-link.is-active {
   color: var(--color-shell-accent);
   background-color: var(--color-shell-hover);
 }
@@ -299,5 +313,21 @@ dialog[data-closing]::backdrop {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+html,
+body,
+#__nuxt {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+/* Nuxt DevTools is injected as a fixed body sibling. Device emulation can
+   retain its previous inline `left` coordinate and expand the visual viewport,
+   even though the application itself is responsive. Keep the development
+   widget out of mobile/tablet captures; desktop DevTools remains available. */
+@media (max-width: 63.999rem) {
+  #nuxt-devtools-anchor {
+    display: none !important;
   }
 }

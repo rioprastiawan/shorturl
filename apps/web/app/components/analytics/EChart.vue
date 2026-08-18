@@ -24,6 +24,15 @@ const root = ref<HTMLDivElement | null>(null)
 const colorMode = useColorMode()
 let chart: ECharts | null = null
 let observer: ResizeObserver | null = null
+let resizeFrame: number | null = null
+
+function resize() {
+  if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null
+    chart?.resize()
+  })
+}
 
 function render() {
   if (!root.value) return
@@ -33,8 +42,11 @@ function render() {
 
 onMounted(() => {
   render()
-  observer = new ResizeObserver(() => chart?.resize())
+  observer = new ResizeObserver(resize)
   observer.observe(root.value!)
+  window.addEventListener('resize', resize, { passive: true })
+  window.addEventListener('orientationchange', resize, { passive: true })
+  resize()
 })
 
 watch(() => props.option, render, { deep: true })
@@ -42,11 +54,14 @@ watch(() => colorMode.value, () => nextTick(render))
 
 onBeforeUnmount(() => {
   observer?.disconnect()
+  window.removeEventListener('resize', resize)
+  window.removeEventListener('orientationchange', resize)
+  if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
   chart?.dispose()
   chart = null
 })
 </script>
 
 <template>
-  <div ref="root" class="w-full" :style="{ height }" role="img" :aria-label="label" />
+  <div ref="root" class="min-w-0 w-full max-w-full overflow-hidden" :style="{ height }" role="img" :aria-label="label" />
 </template>

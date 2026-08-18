@@ -70,43 +70,7 @@ async function saveProfile() {
   }
 }
 
-const currentPassword = ref('')
-const newPassword = ref('')
-const confirmPassword = ref('')
 const passwordOpen = ref(false)
-const passwordSaving = ref(false)
-const passwordErrors = reactive<{ current?: string, next?: string, confirm?: string }>({})
-
-function resetPasswordForm() {
-  currentPassword.value = ''
-  newPassword.value = ''
-  confirmPassword.value = ''
-  passwordErrors.current = undefined
-  passwordErrors.next = undefined
-  passwordErrors.confirm = undefined
-}
-function openPasswordModal() { resetPasswordForm(); passwordOpen.value = true }
-watch(passwordOpen, open => { if (!open && !passwordSaving.value) resetPasswordForm() })
-
-async function changePassword() {
-  passwordErrors.current = undefined
-  passwordErrors.next = undefined
-  passwordErrors.confirm = undefined
-  if (newPassword.value !== confirmPassword.value) { passwordErrors.confirm = 'Passwords do not match'; return }
-  passwordSaving.value = true
-  try {
-    await auth.changePassword({ current_password: currentPassword.value, new_password: newPassword.value })
-    resetPasswordForm()
-    passwordOpen.value = false
-    toast.success('Password changed. Other sessions were signed out.')
-  } catch (error) {
-    if (error instanceof ApiError) {
-      passwordErrors.current = error.field('current_password')
-      passwordErrors.next = error.field('new_password')
-      if (!passwordErrors.current && !passwordErrors.next) toast.error(error.message)
-    } else toast.error('Could not change your password')
-  } finally { passwordSaving.value = false }
-}
 
 const twoFactorEnabled = ref(false)
 const twoFactorLoading = ref(true)
@@ -182,19 +146,19 @@ async function disableTwoFactor() {
     <header><p class="mb-1 text-sm font-semibold text-(--color-accent)">System</p><h1 class="text-2xl font-bold tracking-tight sm:text-3xl">Account Settings</h1><p class="text-sm text-(--color-content-muted)">Manage your profile, preferences, appearance, and password.</p></header>
     <UiCard title="Your account" description="Update the details used to identify and sign in to your account.">
       <form class="flex flex-col gap-4" @submit.prevent="saveProfile"><div class="grid gap-4 sm:grid-cols-2"><UiInput v-model="profileName" label="Display name" required :disabled="profileSaving" :error="profileErrors.name" /><UiInput v-model="profileEmail" label="Email" type="email" required :disabled="profileSaving" :error="profileErrors.email" /></div><div><UiButton type="submit" :loading="profileSaving" :disabled="!profileDirty">Save account details</UiButton></div></form>
-      <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-(--color-border) pt-4"><div class="flex items-center gap-3"><span class="grid size-9 shrink-0 place-items-center rounded-lg bg-(--color-surface-muted) text-(--color-content-muted)"><Icon name="lucide:key-round" size="17" /></span><div><h3 class="text-sm font-semibold">Change password</h3><p class="mt-0.5 text-xs text-(--color-content-muted)">Update your password and sign out other sessions.</p></div></div><UiButton variant="secondary" size="sm" @click="openPasswordModal">Change password</UiButton></div>
+      <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-(--color-border) pt-4"><div class="flex items-center gap-3"><span class="grid size-9 shrink-0 place-items-center rounded-lg bg-(--color-surface-muted) text-(--color-content-muted)"><Icon name="lucide:key-round" size="17" /></span><div><h3 class="text-sm font-semibold">Change password</h3><p class="mt-0.5 text-xs text-(--color-content-muted)">Update your password and sign out other sessions.</p></div></div><UiButton variant="secondary" size="sm" @click="passwordOpen = true">Change password</UiButton></div>
       <div class="mt-6 border-t border-(--color-border) pt-6"><UiButton variant="danger" @click="session.logout()"><Icon name="lucide:log-out" size="16" /> Sign out</UiButton></div>
     </UiCard>
     <UiCard title="Two-step verification" description="Add an authenticator code after your password when signing in.">
       <div v-if="twoFactorLoading" class="flex items-center gap-3" role="status" aria-label="Loading two-factor authentication status"><UiSkeleton height="2.5rem" width="2.5rem" rounded="lg" /><div class="flex-1 space-y-2"><UiSkeleton width="7rem" /><UiSkeleton height="0.65rem" width="65%" /></div><UiSkeleton height="2rem" width="4.5rem" rounded="lg" /></div><div v-else class="flex flex-wrap items-center justify-between gap-4"><div class="flex items-center gap-3"><span class="grid size-10 place-items-center rounded-xl" :class="twoFactorEnabled ? 'bg-emerald-500/10 text-(--color-success)' : 'bg-(--color-surface-muted) text-(--color-content-muted)'"><Icon name="lucide:shield-check" size="19" /></span><div><p class="text-sm font-semibold">{{ twoFactorEnabled ? 'Enabled' : 'Not enabled' }}</p><p class="text-xs text-(--color-content-muted)">{{ twoFactorEnabled ? 'Your account requires a second verification step.' : 'Optional — your current sign-in remains unchanged.' }}</p></div></div><UiButton v-if="!twoFactorEnabled" size="sm" @click="openTwoFactorSetup">Set up</UiButton><UiButton v-else variant="secondary" size="sm" @click="openDisableTwoFactor">Disable</UiButton></div>
     </UiCard>
     <UiCard :title="t('preferences')" :description="t('preferencesDescription')"><form class="grid gap-4 sm:grid-cols-2" @submit.prevent="savePreferences"><UiSelect v-model="preferenceLanguage" :label="t('language')" :options="languageOptions" :disabled="preferencesSaving" :error="preferenceErrors.language" /><UiSelect v-model="preferenceTimezone" :label="t('timezone')" :options="timezoneSelectOptions" searchable search-placeholder="Search timezone…" :disabled="preferencesSaving" :error="preferenceErrors.timezone" /><div class="sm:col-span-2"><UiButton type="submit" :loading="preferencesSaving" :disabled="!preferencesDirty">{{ t('savePreferences') }}</UiButton></div></form></UiCard>
-    <UiModal v-model="passwordOpen" title="Change your password" description="Use at least 10 characters. Every other signed-in session will be ended."><form class="flex flex-col gap-4" @submit.prevent="changePassword"><UiInput v-model="currentPassword" label="Current password" type="password" autocomplete="current-password" required :disabled="passwordSaving" :error="passwordErrors.current" /><UiInput v-model="newPassword" label="New password" type="password" autocomplete="new-password" required hint="At least 10 characters" :disabled="passwordSaving" :error="passwordErrors.next" /><UiInput v-model="confirmPassword" label="Confirm new password" type="password" autocomplete="new-password" required :disabled="passwordSaving" :error="passwordErrors.confirm" /></form><template #actions><UiButton variant="secondary" :disabled="passwordSaving" @click="passwordOpen = false">Cancel</UiButton><UiButton :loading="passwordSaving" @click="changePassword">Update password</UiButton></template></UiModal>
+    <AccountChangePasswordModal v-model="passwordOpen" />
     <UiModal v-model="twoFactorOpen" title="Set up two-step verification" :description="twoFactorSetup ? 'Scan the QR code, save your recovery codes, then verify one code.' : 'Confirm your password to begin.'" size="lg">
-      <form v-if="!twoFactorSetup" class="flex flex-col gap-4" @submit.prevent="beginTwoFactor"><UiInput v-model="twoFactorPassword" label="Current password" type="password" autocomplete="current-password" required :error="twoFactorError" /></form>
-      <div v-else class="grid gap-5 md:grid-cols-[14rem_1fr]"><div class="flex flex-col items-center gap-2"><img :src="twoFactorQr" alt="Authenticator QR code" class="size-52 rounded-xl bg-white p-2"><p class="text-center text-xs text-(--color-content-muted)">Scan with your authenticator app</p></div><div class="space-y-4"><div><p class="text-sm font-semibold">Manual setup key</p><UiCopyButton class="mt-1" :value="twoFactorSetup.secret" show-value label="Copy" /></div><div><div class="flex items-center justify-between"><p class="text-sm font-semibold">Recovery codes</p><UiCopyButton :value="twoFactorSetup.recovery_codes.join('\n')" label="Copy all" /></div><p class="mt-1 text-xs text-(--color-content-muted)">Store these somewhere safe. Each code works once.</p><div class="mt-2 grid grid-cols-2 gap-1.5 rounded-lg bg-(--color-surface-muted) p-3"><code v-for="recovery in twoFactorSetup.recovery_codes" :key="recovery" class="text-xs">{{ recovery }}</code></div></div><UiInput v-model="twoFactorCode" label="Authentication code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" required :error="twoFactorError" /></div></div>
+      <form v-if="!twoFactorSetup" class="flex flex-col gap-4" @submit.prevent="beginTwoFactor"><UiPasswordInput v-model="twoFactorPassword" label="Current password" autocomplete="current-password" required :error="twoFactorError" /></form>
+      <div v-else class="grid min-w-0 gap-5 md:grid-cols-[14rem_minmax(0,1fr)]"><div class="flex min-w-0 flex-col items-center gap-2"><img :src="twoFactorQr" alt="Authenticator QR code" class="aspect-square w-full max-w-52 rounded-xl bg-white p-2"><p class="text-center text-xs text-(--color-content-muted)">Scan with your authenticator app</p></div><div class="min-w-0 space-y-4"><div><p class="text-sm font-semibold">Manual setup key</p><UiCopyButton class="mt-1" :value="twoFactorSetup.secret" show-value label="Copy" /></div><div><div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-semibold">Recovery codes</p><UiCopyButton :value="twoFactorSetup.recovery_codes.join('\n')" label="Copy all" /></div><p class="mt-1 text-xs text-(--color-content-muted)">Store these somewhere safe. Each code works once.</p><div class="mt-2 grid gap-1.5 rounded-lg bg-(--color-surface-muted) p-3 min-[380px]:grid-cols-2"><code v-for="recovery in twoFactorSetup.recovery_codes" :key="recovery" class="break-all text-xs">{{ recovery }}</code></div></div><UiInput v-model="twoFactorCode" label="Authentication code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" required :error="twoFactorError" /></div></div>
       <template #actions><UiButton variant="secondary" :disabled="twoFactorBusy" @click="twoFactorOpen = false">Cancel</UiButton><UiButton :loading="twoFactorBusy" @click="twoFactorSetup ? enableTwoFactor() : beginTwoFactor()">{{ twoFactorSetup ? 'Enable verification' : 'Continue' }}</UiButton></template>
     </UiModal>
-    <UiModal v-model="disableTwoFactorOpen" title="Disable two-step verification?" description="Your account will return to password-only sign in." danger><form class="flex flex-col gap-4" @submit.prevent="disableTwoFactor"><UiInput v-model="disablePassword" label="Current password" type="password" autocomplete="current-password" required /><UiInput v-model="disableCode" label="Authentication or recovery code" autocomplete="one-time-code" required :error="disableError" /></form><template #actions><UiButton variant="secondary" :disabled="twoFactorBusy" @click="disableTwoFactorOpen = false">Cancel</UiButton><UiButton variant="danger" :loading="twoFactorBusy" @click="disableTwoFactor">Disable verification</UiButton></template></UiModal>
+    <UiModal v-model="disableTwoFactorOpen" title="Disable two-step verification?" description="Your account will return to password-only sign in." danger><form class="flex flex-col gap-4" @submit.prevent="disableTwoFactor"><UiPasswordInput v-model="disablePassword" label="Current password" autocomplete="current-password" required /><UiInput v-model="disableCode" label="Authentication or recovery code" autocomplete="one-time-code" required :error="disableError" /></form><template #actions><UiButton variant="secondary" :disabled="twoFactorBusy" @click="disableTwoFactorOpen = false">Cancel</UiButton><UiButton variant="danger" :loading="twoFactorBusy" @click="disableTwoFactor">Disable verification</UiButton></template></UiModal>
   </div>
 </template>

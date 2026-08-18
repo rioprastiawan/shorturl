@@ -19,6 +19,7 @@ import (
 	"github.com/rioprastiawan/shorturl/apps/server/internal/middleware"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/security"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/slug"
+	"github.com/rioprastiawan/shorturl/apps/server/internal/store"
 	"github.com/rioprastiawan/shorturl/apps/server/internal/urlx"
 )
 
@@ -29,11 +30,12 @@ type Handler struct {
 	cfg      config.Config
 	logger   *slog.Logger
 	branding *branding.Service
+	domains  *store.Queries
 }
 
 // NewHandler builds the redirect handler.
-func NewHandler(links *link.Service, producer *analytics.Producer, brand *branding.Service, cfg config.Config, logger *slog.Logger) *Handler {
-	return &Handler{links: links, producer: producer, branding: brand, cfg: cfg, logger: logger}
+func NewHandler(links *link.Service, producer *analytics.Producer, brand *branding.Service, domains *store.Queries, cfg config.Config, logger *slog.Logger) *Handler {
+	return &Handler{links: links, producer: producer, branding: brand, domains: domains, cfg: cfg, logger: logger}
 }
 
 // ServeHTTP resolves host + slug and responds.
@@ -42,9 +44,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := slug.Normalize(r.URL.Path)
 
 	if path == "" {
-		// The bare custom domain has nothing to serve. Sending it to the
-		// dashboard is friendlier than a 404 for someone who typed the host.
-		http.Redirect(w, r, h.cfg.AppURL, http.StatusFound)
+		// A domain may override the dashboard fallback with its own landing page.
+		target := h.cfg.AppURL
+		if h.domains != nil {
+			if domain, err := h.domains.GetDomainByHostname(r.Context(), hostname); err == nil && domain.RootRedirectUrl != nil {
+				target = *domain.RootRedirectUrl
+			}
+		}
+		w.Header().Set("Cache-Control", "private, no-store, max-age=0")
+		http.Redirect(w, r, target, http.StatusFound)
 		return
 	}
 

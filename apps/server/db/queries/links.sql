@@ -62,8 +62,16 @@ SET destination_url = coalesce(sqlc.narg(destination_url), destination_url),
 WHERE id = sqlc.arg(id) AND workspace_id = sqlc.arg(workspace_id)
 RETURNING *;
 
--- name: DeleteLink :execrows
-DELETE FROM links WHERE id = $1 AND workspace_id = $2;
+-- name: RequestLinkDeletion :execrows
+WITH requested AS (
+    UPDATE links
+    SET status = 'archived'
+    WHERE links.id = sqlc.arg(link_id) AND links.workspace_id = sqlc.arg(workspace_id)
+    RETURNING id, workspace_id
+)
+INSERT INTO deletion_jobs (resource_type, resource_id, workspace_id, not_before)
+SELECT 'link', requested.id, requested.workspace_id, now() + interval '5 minutes' FROM requested
+ON CONFLICT (resource_type, resource_id) DO NOTHING;
 
 -- name: CountLinksInWorkspace :one
 SELECT
@@ -81,6 +89,9 @@ SELECT links.slug, domains.hostname
 FROM links
 JOIN domains ON domains.id = links.domain_id
 WHERE links.domain_id = $1;
+
+-- name: CountLinksForDomain :one
+SELECT count(*) FROM links WHERE domain_id = $1;
 
 -- name: RecentLinks :many
 SELECT

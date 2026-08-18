@@ -306,6 +306,7 @@ func (w *Worker) maintain(ctx context.Context) {
 	w.retirePoisonEntries(ctx)
 	w.claimStrandedEntries(ctx)
 	w.expireRows(ctx)
+	w.cleanupDeletions(ctx)
 }
 
 // retirePoisonEntries acknowledges entries that have been redelivered too many

@@ -1,6 +1,8 @@
 package workspace
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -13,13 +15,30 @@ import (
 
 // Handler is the HTTP layer over Service.
 type Handler struct {
-	svc *Service
+	svc   *Service
+	audit AuditRecorder
+}
+
+type AuditRecorder interface {
+	RecordAudit(context.Context, uuid.UUID, *uuid.UUID, string, string, uuid.UUID, string, json.RawMessage)
 }
 
 const memberListPageSize = 10
 
 // NewHandler builds the workspace handler.
-func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
+func NewHandler(svc *Service, recorders ...AuditRecorder) *Handler {
+	h := &Handler{svc: svc}
+	if len(recorders) > 0 {
+		h.audit = recorders[0]
+	}
+	return h
+}
+
+func (h *Handler) record(r *http.Request, workspaceID, actorID uuid.UUID, action, entityType string, entityID uuid.UUID, label string) {
+	if h.audit != nil {
+		h.audit.RecordAudit(r.Context(), workspaceID, &actorID, action, entityType, entityID, label, nil)
+	}
+}
 
 // Routes registers the collection endpoints, which need an authenticated user
 // but no workspace.
@@ -86,6 +105,7 @@ func (h *Handler) revokeInvitation(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.record(r, m.WorkspaceID, m.UserID, "invitation.revoked", "invitation", id, "Workspace invitation")
 	httpx.NoContent(w)
 }
 
@@ -99,6 +119,7 @@ func (h *Handler) renewInvitation(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.record(r, m.WorkspaceID, m.UserID, "invitation.renewed", "invitation", invitation.ID, string(invitation.Role)+" invitation")
 	httpx.Data(w, http.StatusCreated, invitation)
 }
 
@@ -125,6 +146,7 @@ func (h *Handler) createInvitation(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.record(r, m.WorkspaceID, m.UserID, "invitation.created", "invitation", invitation.ID, string(invitation.Role)+" invitation")
 	httpx.Data(w, http.StatusCreated, invitation)
 }
 
@@ -141,8 +163,9 @@ func (h *Handler) Mount(r chi.Router) {
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	user := authctx.MustUser(r.Context())
+	limit := httpx.QueryInt(r, "limit", 20, 1, 100)
 
-	items, err := h.svc.ListForUser(r.Context(), user.ID)
+	items, nextCursor, err := h.svc.ListForUser(r.Context(), user.ID, r.URL.Query().Get("search"), r.URL.Query().Get("cursor"), limit)
 	if err != nil {
 		httpx.Error(w, r, err)
 		return
@@ -152,7 +175,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	for _, item := range items {
 		out = append(out, NewDTO(&item.Workspace, item.Role))
 	}
-	httpx.List(w, out, httpx.Meta{})
+	httpx.List(w, out, httpx.Meta{NextCursor: nextCursor})
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +197,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.record(r, ws.ID, user.ID, "workspace.created", "workspace", ws.ID, ws.Name)
 
 	httpx.Data(w, http.StatusCreated, NewDTO(ws, authctx.RoleOwner))
 }
@@ -203,6 +227,7 @@ func (h *Handler) createDemo(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.record(r, ws.ID, user.ID, "workspace.created", "workspace", ws.ID, ws.Name)
 	httpx.Data(w, http.StatusCreated, NewDTO(ws, authctx.RoleOwner))
 }
 
@@ -241,6 +266,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.record(r, m.WorkspaceID, m.UserID, "workspace.updated", "workspace", ws.ID, ws.Name)
 	httpx.Data(w, http.StatusOK, NewDTO(ws, m.Role))
 }
 
@@ -307,6 +333,7 @@ func (h *Handler) addMember(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.record(r, m.WorkspaceID, m.UserID, "member.added", "member", member.UserID, member.Email)
 	httpx.Data(w, http.StatusCreated, NewMemberDTO(*member))
 }
 
@@ -340,6 +367,7 @@ func (h *Handler) updateMemberRole(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	h.record(r, m.WorkspaceID, m.UserID, "member.role_updated", "member", member.UserID, member.Email)
 	httpx.Data(w, http.StatusOK, NewMemberDTO(*member))
 }
 
@@ -360,6 +388,11 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
+	action := "member.removed"
+	if targetID == m.UserID {
+		action = "member.left"
+	}
+	h.record(r, m.WorkspaceID, m.UserID, action, "member", targetID, targetID.String())
 	httpx.NoContent(w)
 }
 

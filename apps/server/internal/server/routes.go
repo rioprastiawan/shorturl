@@ -59,7 +59,7 @@ func (s *Server) routes(version string) http.Handler {
 		// Anything else is a short link. On a custom domain that is every
 		// path; on the application domain the reserved-slug list keeps links
 		// from shadowing /api, /login, and friends (plan §8, §40).
-		redirectHandler := redirect.NewHandler(s.app.Link, s.app.Producer, s.app.Branding, s.cfg, s.logger)
+		redirectHandler := redirect.NewHandler(s.app.Link, s.app.Producer, s.app.Branding, s.app.Queries, s.cfg, s.logger)
 		redirectLimiter := middleware.NewRateLimiter(s.cfg.RateLimitRedirect)
 		r.NotFound(middleware.RateLimit(redirectLimiter, middleware.ByIP)(redirectHandler).ServeHTTP)
 		r.MethodNotAllowed(middleware.RateLimit(redirectLimiter, middleware.ByIP)(redirectHandler).ServeHTTP)
@@ -74,11 +74,11 @@ func (s *Server) mountAPI(r chi.Router) {
 
 	authHandler := auth.NewHandler(app.Auth)
 	setupHandler := setup.NewHandler(app.Setup)
-	wsHandler := workspace.NewHandler(app.Workspace)
-	domainHandler := domain.NewHandler(app.Domain)
+	wsHandler := workspace.NewHandler(app.Workspace, app.Link)
+	domainHandler := domain.NewHandler(app.Domain, app.Link)
 	linkHandler := link.NewHandler(app.Link)
 	analyticsHandler := analytics.NewHandler(app.Analytics)
-	apiKeyHandler := apikey.NewHandler(app.APIKey)
+	apiKeyHandler := apikey.NewHandler(app.APIKey, app.Link)
 	brandingHandler := branding.NewHandler(app.Branding)
 	publicHandler := app.PublicAPIHandler()
 

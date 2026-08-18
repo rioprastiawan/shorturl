@@ -10,6 +10,7 @@ const { branding } = useBranding()
 const { helpOpen: shortcutHelpOpen, commandOpen } = useDashboardShortcuts()
 const moreOpen = ref(false)
 const accountMenuOpen = ref(false)
+const passwordOpen = ref(false)
 const accountMenu = useTemplateRef<HTMLElement>('accountMenu')
 const accountTrigger = useTemplateRef<HTMLElement>('accountTrigger')
 const accountPanel = useTemplateRef<HTMLElement>('accountPanel')
@@ -24,12 +25,23 @@ await loadWorkspaces()
 
 const groups = computed(() => {
   const role = active.value?.role
-  return [
-    { label: t('general'), items: [
+  const general = { label: t('general'), items: [
       { to: '/dashboard', label: t('overview'), icon: 'lucide:layout-dashboard', shortcut: 'G O' },
       { to: '/dashboard/links', label: t('links'), icon: 'lucide:link-2', shortcut: 'G L' },
       { to: '/dashboard/analytics', label: t('analytics'), icon: 'lucide:chart-no-axes-combined', shortcut: 'G A' },
-    ] },
+    ] }
+  const appearance = { label: t('appearance'), items: [
+      { to: '/dashboard/appearance', label: t('appearancePage'), icon: 'lucide:palette' },
+    ] }
+  const memberWorkspace = { label: t('workspace'), items: [
+      { to: '/dashboard/workspace/members', label: t('members'), icon: 'lucide:users', shortcut: 'G M' },
+      { to: '/dashboard/workspace/settings', label: t('settings'), icon: 'lucide:settings', shortcut: 'G S' },
+    ] }
+
+  if (role === 'member') return [general, memberWorkspace, appearance]
+
+  return [
+    general,
     { label: t('manage'), items: [
       { to: '/dashboard/domains', label: t('domains'), icon: 'lucide:globe-2', shortcut: 'G D' },
     ] },
@@ -49,9 +61,7 @@ const groups = computed(() => {
       ...(session.user.value?.is_admin ? [{ to: '/dashboard/system/qr-branding', label: t('qrBranding'), icon: 'lucide:qr-code' }] : []),
       { to: '/dashboard/system/settings', label: t('settings'), icon: 'lucide:settings' },
     ] },
-    { label: t('appearance'), items: [
-      { to: '/dashboard/appearance', label: t('appearancePage'), icon: 'lucide:palette' },
-    ] },
+    appearance,
   ]
 })
 
@@ -171,6 +181,14 @@ async function signOut() {
               </NuxtLink>
               <button
                 type="button"
+                class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors hover:bg-(--color-surface-muted)"
+                @click="accountMenuOpen = false; passwordOpen = true"
+              >
+                <Icon name="lucide:key-round" size="17" />
+                <span class="flex-1 text-left">Change password</span>
+              </button>
+              <button
+                type="button"
                 class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium text-(--color-danger) transition-all duration-200 hover:translate-x-0.5 hover:bg-(--color-danger)/8"
                 @click="signOut"
               >
@@ -273,7 +291,7 @@ async function signOut() {
     </Transition>
 
     <nav
-      class="mobile-dashboard-nav fixed inset-x-0 bottom-0 z-30 border-t border-(--color-shell-border) bg-(--color-shell)/95 px-2 pt-1.5 text-(--color-shell-content) shadow-[0_-8px_30px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden"
+      class="mobile-dashboard-nav fixed inset-x-0 bottom-0 z-30 border-t border-(--color-border) bg-white px-2 pt-1.5 text-(--color-content) shadow-[0_-8px_30px_rgba(15,23,42,0.16)] lg:hidden dark:border-(--color-shell-border) dark:bg-(--color-shell)/95 dark:text-(--color-shell-content) dark:backdrop-blur"
       style="padding-bottom: max(0.375rem, env(safe-area-inset-bottom));"
       aria-label="Primary navigation"
     >
@@ -284,7 +302,7 @@ async function signOut() {
         <NuxtLink to="/dashboard/links" class="mobile-bottom-link" :class="isActive('/dashboard/links') ? 'is-active' : ''">
           <Icon name="lucide:link-2" size="20" /><span>{{ t('links') }}</span>
         </NuxtLink>
-        <button type="button" class="group flex flex-col items-center gap-1 text-[10px] font-semibold text-(--color-shell-content-muted)" aria-label="Create short link" @click="createLinkModal.show()">
+        <button type="button" class="group flex flex-col items-center gap-1 text-[10px] font-semibold text-(--color-content-muted) dark:text-(--color-shell-content-muted)" aria-label="Create short link" @click="createLinkModal.show()">
           <span class="-mt-5 grid size-13 place-items-center rounded-2xl bg-(--color-shell-accent) text-(--color-accent-content) shadow-lg shadow-black/25 transition-transform group-active:scale-95">
             <Icon name="lucide:plus" size="24" />
           </span>
@@ -299,6 +317,7 @@ async function signOut() {
       </div>
     </nav>
     <UiToaster />
+    <AccountChangePasswordModal v-model="passwordOpen" />
     <LinksCreateModal />
     <DashboardCommandPalette v-model="commandOpen" />
     <DashboardShortcutHelp v-model="shortcutHelpOpen" />

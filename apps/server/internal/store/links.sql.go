@@ -12,6 +12,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const countLinksForDomain = `-- name: CountLinksForDomain :one
+SELECT count(*) FROM links WHERE domain_id = $1
+`
+
+func (q *Queries) CountLinksForDomain(ctx context.Context, domainID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countLinksForDomain, domainID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countLinksInWorkspace = `-- name: CountLinksInWorkspace :one
 SELECT
     count(*) AS total,
@@ -98,23 +109,6 @@ func (q *Queries) CreateLink(ctx context.Context, arg CreateLinkParams) (Link, e
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const deleteLink = `-- name: DeleteLink :execrows
-DELETE FROM links WHERE id = $1 AND workspace_id = $2
-`
-
-type DeleteLinkParams struct {
-	ID          uuid.UUID
-	WorkspaceID uuid.UUID
-}
-
-func (q *Queries) DeleteLink(ctx context.Context, arg DeleteLinkParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteLink, arg.ID, arg.WorkspaceID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const getLink = `-- name: GetLink :one
@@ -345,6 +339,31 @@ func (q *Queries) RecentLinks(ctx context.Context, arg RecentLinksParams) ([]Rec
 		return nil, err
 	}
 	return items, nil
+}
+
+const requestLinkDeletion = `-- name: RequestLinkDeletion :execrows
+WITH requested AS (
+    UPDATE links
+    SET status = 'archived'
+    WHERE links.id = $1 AND links.workspace_id = $2
+    RETURNING id, workspace_id
+)
+INSERT INTO deletion_jobs (resource_type, resource_id, workspace_id, not_before)
+SELECT 'link', requested.id, requested.workspace_id, now() + interval '5 minutes' FROM requested
+ON CONFLICT (resource_type, resource_id) DO NOTHING
+`
+
+type RequestLinkDeletionParams struct {
+	LinkID      uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+func (q *Queries) RequestLinkDeletion(ctx context.Context, arg RequestLinkDeletionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, requestLinkDeletion, arg.LinkID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const resolveLink = `-- name: ResolveLink :one

@@ -25,13 +25,13 @@ function goTo(page: number) {
 <template>
   <div
     v-if="total > pageSize"
-    class="flex flex-wrap items-center justify-between gap-3 border-t border-(--color-border) px-5 py-3"
+    class="flex min-w-0 flex-col gap-2 border-t border-(--color-border) px-3.5 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-5"
   >
     <p class="text-xs text-(--color-content-muted)" aria-live="polite">
       Showing {{ start }}–{{ end }} of {{ total }} {{ label }}
     </p>
 
-    <div class="flex items-center gap-2" :aria-label="`${label} pagination`">
+    <nav class="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start" :aria-label="`${label} pagination`">
       <UiButton
         variant="secondary"
         size="sm"
@@ -40,7 +40,7 @@ function goTo(page: number) {
         @click="goTo(page - 1)"
       >
         <Icon name="lucide:chevron-left" size="14" />
-        Previous
+        <span>Previous</span>
       </UiButton>
       <span class="min-w-16 text-center text-xs font-medium text-(--color-content-muted)">
         {{ page }} / {{ totalPages }}
@@ -52,9 +52,9 @@ function goTo(page: number) {
         :aria-label="`Next ${label} page`"
         @click="goTo(page + 1)"
       >
-        Next
+        <span>Next</span>
         <Icon name="lucide:chevron-right" size="14" />
       </UiButton>
-    </div>
+    </nav>
   </div>
 </template>

@@ -21,8 +21,10 @@ type Querier interface {
 	ClicksOverTimeForLink(ctx context.Context, arg ClicksOverTimeForLinkParams) ([]ClicksOverTimeForLinkRow, error)
 	CountActiveDomains(ctx context.Context, workspaceID uuid.UUID) (int64, error)
 	CountDomainIssues(ctx context.Context, workspaceID uuid.UUID) (int64, error)
+	CountDomains(ctx context.Context, workspaceID uuid.UUID) (int64, error)
 	CountExpiringAPIKeys(ctx context.Context, workspaceID uuid.UUID) (int64, error)
 	CountExpiringLinks(ctx context.Context, workspaceID uuid.UUID) (int64, error)
+	CountLinksForDomain(ctx context.Context, domainID uuid.UUID) (int64, error)
 	CountLinksInWorkspace(ctx context.Context, workspaceID uuid.UUID) (CountLinksInWorkspaceRow, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CountWorkspaceMembers(ctx context.Context, workspaceID uuid.UUID) (int64, error)
@@ -40,13 +42,11 @@ type Querier interface {
 	DeleteDomain(ctx context.Context, arg DeleteDomainParams) (int64, error)
 	DeleteExpiredIdempotencyRecords(ctx context.Context) (int64, error)
 	DeleteExpiredSessions(ctx context.Context) (int64, error)
-	DeleteLink(ctx context.Context, arg DeleteLinkParams) (int64, error)
 	DeleteSession(ctx context.Context, tokenHash string) error
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
 	// Visitor hashes have the same retention window as raw click events. Other
 	// aggregate dimensions remain tiny and are retained indefinitely.
 	DeleteVisitorDimensionsBefore(ctx context.Context, day time.Time) (int64, error)
-	DeleteWorkspace(ctx context.Context, id uuid.UUID) error
 	FilteredClicksByHourOfDay(ctx context.Context, arg FilteredClicksByHourOfDayParams) ([]FilteredClicksByHourOfDayRow, error)
 	FilteredClicksByWeekday(ctx context.Context, arg FilteredClicksByWeekdayParams) ([]FilteredClicksByWeekdayRow, error)
 	FilteredClicksInRange(ctx context.Context, arg FilteredClicksInRangeParams) (int64, error)
@@ -75,13 +75,17 @@ type Querier interface {
 	ListActiveDomains(ctx context.Context) ([]Domain, error)
 	ListDomainHostnamesForWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]string, error)
 	ListDomains(ctx context.Context, workspaceID uuid.UUID) ([]Domain, error)
+	ListDomainsPage(ctx context.Context, arg ListDomainsPageParams) ([]Domain, error)
 	ListLinksForDomain(ctx context.Context, domainID uuid.UUID) ([]ListLinksForDomainRow, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	ListWorkspaceMembers(ctx context.Context, arg ListWorkspaceMembersParams) ([]ListWorkspaceMembersRow, error)
 	ListWorkspacesForUser(ctx context.Context, userID uuid.UUID) ([]ListWorkspacesForUserRow, error)
+	ListWorkspacesForUserPage(ctx context.Context, arg ListWorkspacesForUserPageParams) ([]ListWorkspacesForUserPageRow, error)
 	RecentClickEvents(ctx context.Context, arg RecentClickEventsParams) ([]ClickEvent, error)
 	RecentLinks(ctx context.Context, arg RecentLinksParams) ([]RecentLinksRow, error)
 	RemoveWorkspaceMember(ctx context.Context, arg RemoveWorkspaceMemberParams) (int64, error)
+	RequestLinkDeletion(ctx context.Context, arg RequestLinkDeletionParams) (int64, error)
+	RequestWorkspaceDeletion(ctx context.Context, workspaceID uuid.UUID) (int64, error)
 	// Redirect hot path fallback: only used on a Redis cache miss.
 	ResolveLink(ctx context.Context, arg ResolveLinkParams) (ResolveLinkRow, error)
 	RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (int64, error)
@@ -93,6 +97,7 @@ type Querier interface {
 	TouchAPIKey(ctx context.Context, id uuid.UUID) error
 	TouchSession(ctx context.Context, id uuid.UUID) error
 	UniqueVisitorsInRange(ctx context.Context, arg UniqueVisitorsInRangeParams) (int64, error)
+	UpdateDomainRootRedirect(ctx context.Context, arg UpdateDomainRootRedirectParams) (Domain, error)
 	UpdateDomainSSLStatus(ctx context.Context, arg UpdateDomainSSLStatusParams) error
 	UpdateDomainVerification(ctx context.Context, arg UpdateDomainVerificationParams) (Domain, error)
 	UpdateLink(ctx context.Context, arg UpdateLinkParams) (Link, error)

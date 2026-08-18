@@ -38,6 +38,10 @@ func (h *Handler) Routes(r chi.Router) {
 
 func (h *Handler) listAuditLog(w http.ResponseWriter, r *http.Request) {
 	m := authctx.MustMembership(r.Context())
+	if !m.Role.CanManageMembers() {
+		httpx.Error(w, r, httpx.ErrForbidden)
+		return
+	}
 	page := httpx.QueryInt(r, "page", 1, 1, 1_000_000)
 	perPage := httpx.QueryInt(r, "per_page", 25, 1, 100)
 	items, total, err := h.svc.ListAuditLog(r.Context(), m.WorkspaceID, perPage, (page-1)*perPage)
@@ -261,7 +265,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
-	h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, "link.created", view.Link.ID, view.ShortURL(), nil)
+	h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, "link.created", "link", view.Link.ID, view.ShortURL(), nil)
 	httpx.Data(w, http.StatusCreated, ToDTO(view))
 }
 
@@ -315,7 +319,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	if in.Status != nil {
 		action = "link." + *in.Status
 	}
-	h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, action, view.Link.ID, view.ShortURL(), nil)
+	h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, action, "link", view.Link.ID, view.ShortURL(), nil)
 	httpx.Data(w, http.StatusOK, ToDTO(view))
 }
 
@@ -342,7 +346,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := authctx.MustUser(r.Context())
-	h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, "link.deleted", id, before.ShortURL(), nil)
+	h.svc.RecordAudit(r.Context(), m.WorkspaceID, &user.ID, "link.deleted", "link", id, before.ShortURL(), nil)
 	httpx.NoContent(w)
 }
 

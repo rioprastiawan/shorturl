@@ -5,7 +5,7 @@ import { toRfc3339 } from '~/components/links/form'
 import { ApiError } from '~/composables/useApi'
 import { useServices } from '~/services'
 
-definePageMeta({ middleware: 'auth' })
+definePageMeta({ middleware: ['auth', 'workspace-admin'] })
 
 useHead({ title: 'API keys · ShortURL' })
 
@@ -296,7 +296,7 @@ func main() {
           Connect your systems securely with keys managed by this workspace.
         </p>
       </div>
-      <div class="flex gap-2">
+      <div class="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
         <UiButton variant="secondary" to="/dashboard/api-docs">
           <Icon name="lucide:book-open-text" size="15" /> API docs
         </UiButton>
@@ -416,7 +416,7 @@ func main() {
               :page="pageNumber"
               :has-next="Boolean(nextCursor)"
               :loading="loading"
-              :label="`${keys.length} keys shown`"
+              :label="`Showing ${(pageNumber - 1) * 10 + 1}–${(pageNumber - 1) * 10 + keys.length} keys`"
               @previous="previousPage"
               @next="nextPage"
             />
@@ -490,7 +490,7 @@ func main() {
             </p>
           </div>
         </div>
-        <div class="flex shrink-0 flex-wrap gap-2 pl-12 sm:pl-0">
+        <div class="flex w-full flex-col gap-2 sm:w-auto sm:shrink-0 sm:flex-row sm:flex-wrap sm:pl-0">
           <UiButton variant="secondary" to="/dashboard/api-docs">
             View API documentation
           </UiButton>

@@ -192,18 +192,18 @@ function exportCsv() {
           Clicks across every link in this workspace.
         </p>
       </div>
-      <UiButton variant="secondary" :disabled="loading || !report" @click="exportCsv">
+      <UiButton class="w-full sm:w-auto" variant="secondary" :disabled="loading || !report" @click="exportCsv">
         <Icon name="lucide:download" size="15" /> Export CSV
       </UiButton>
     </header>
 
     <section class="rounded-xl border border-(--color-border) bg-(--color-surface-raised) p-3 shadow-sm" aria-label="Analytics filters">
-      <div class="grid items-end gap-3 lg:grid-cols-[minmax(10rem,1fr)_minmax(12rem,1.35fr)_auto]">
+      <div class="grid min-w-0 items-end gap-3 [&>*]:min-w-0 lg:grid-cols-[minmax(10rem,1fr)_minmax(12rem,1.35fr)_auto]">
         <UiSelect v-model="selectedDomain" label="Domain" :options="domainOptions" :disabled="filtersLoading" />
         <UiSelect v-model="selectedLink" label="Link" :options="linkOptions" searchable search-placeholder="Search links…" :disabled="filtersLoading" />
         <div><p class="mb-1 text-sm font-medium">Date range</p><AnalyticsRangePicker v-model="range" :custom-range="customRange" :disabled="loading" @custom="applyCustomRange" /></div>
       </div>
-      <div v-if="hasScopeFilter" class="mt-3 flex items-center justify-between gap-3 border-t border-(--color-border) pt-3">
+      <div v-if="hasScopeFilter" class="mt-3 flex flex-col items-start gap-3 border-t border-(--color-border) pt-3 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-xs text-(--color-content-muted)">Trend, totals and timing are filtered. Audience breakdowns are hidden because those rollups are workspace-wide.</p>
         <UiButton variant="ghost" size="sm" @click="domainId = null; linkId = null">Reset filters</UiButton>
       </div>

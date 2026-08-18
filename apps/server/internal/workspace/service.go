@@ -4,8 +4,11 @@ package workspace
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -86,18 +89,64 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, name string) (*s
 	return &ws, nil
 }
 
-// ListForUser returns every workspace the user belongs to, with their role.
-func (s *Service) ListForUser(ctx context.Context, userID uuid.UUID) ([]WorkspaceWithRole, error) {
-	rows, err := s.q.ListWorkspacesForUser(ctx, userID)
+// ListForUser returns a stable keyset-paginated workspace page.
+func (s *Service) ListForUser(ctx context.Context, userID uuid.UUID, search, cursor string, limit int) ([]WorkspaceWithRole, *string, error) {
+	params := store.ListWorkspacesForUserPageParams{
+		UserID:    userID,
+		Search:    strings.TrimSpace(search),
+		PageLimit: int32(limit + 1),
+	}
+	if cursor != "" {
+		createdAt, id, err := decodeWorkspaceCursor(cursor)
+		if err != nil {
+			return nil, nil, httpx.BadRequest("Invalid cursor")
+		}
+		params.HasCursor = true
+		params.CursorCreatedAt = createdAt
+		params.CursorID = id
+	}
+
+	rows, err := s.q.ListWorkspacesForUserPage(ctx, params)
 	if err != nil {
-		return nil, httpx.Internal(err)
+		return nil, nil, httpx.Internal(err)
+	}
+	hasNext := len(rows) > limit
+	if hasNext {
+		rows = rows[:limit]
 	}
 
 	out := make([]WorkspaceWithRole, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, WorkspaceWithRole{Workspace: row.Workspace, Role: authctx.Role(row.Role)})
 	}
-	return out, nil
+	var next *string
+	if hasNext && len(rows) > 0 {
+		value := encodeWorkspaceCursor(rows[len(rows)-1].Workspace.CreatedAt, rows[len(rows)-1].Workspace.ID)
+		next = &value
+	}
+	return out, next, nil
+}
+
+func encodeWorkspaceCursor(createdAt time.Time, id uuid.UUID) string {
+	raw := createdAt.UTC().Format(time.RFC3339Nano) + "|" + id.String()
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func decodeWorkspaceCursor(raw string) (time.Time, uuid.UUID, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return time.Time{}, uuid.Nil, err
+	}
+	parts := strings.Split(string(decoded), "|")
+	if len(parts) != 2 {
+		return time.Time{}, uuid.Nil, fmt.Errorf("malformed cursor")
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return time.Time{}, uuid.Nil, err
+	}
+	id, err := uuid.Parse(parts[1])
+	return createdAt, id, err
 }
 
 // Get returns a single workspace. Access is decided by the membership the
@@ -120,7 +169,8 @@ func (s *Service) Update(ctx context.Context, workspaceID uuid.UUID, name string
 	return &ws, nil
 }
 
-// Delete removes a workspace and, by cascade, everything inside it.
+// Delete makes a workspace unavailable immediately and queues its potentially
+// large cascade for bounded cleanup by the analytics worker.
 //
 // The owner's last workspace is refused: the dashboard has no state for a user
 // with nowhere to go, and the deletion is irreversible.
@@ -133,8 +183,12 @@ func (s *Service) Delete(ctx context.Context, workspaceID, userID uuid.UUID) err
 		return httpx.Conflictf("last_workspace", "You cannot delete your only workspace")
 	}
 
-	if err := s.q.DeleteWorkspace(ctx, workspaceID); err != nil {
+	affected, err := s.q.RequestWorkspaceDeletion(ctx, workspaceID)
+	if err != nil {
 		return httpx.Internal(err)
+	}
+	if affected == 0 {
+		return httpx.ErrNotFound
 	}
 	return nil
 }
@@ -157,11 +211,12 @@ func (s *Service) ListMembers(ctx context.Context, workspaceID uuid.UUID, limit,
 	out := make([]Member, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, Member{
-			UserID:    row.UserID,
-			Name:      row.Name,
-			Email:     row.Email,
-			Role:      authctx.Role(row.Role),
-			CreatedAt: row.CreatedAt,
+			UserID:           row.UserID,
+			Name:             row.Name,
+			Email:            row.Email,
+			Role:             authctx.Role(row.Role),
+			TwoFactorEnabled: row.TwoFactorEnabled,
+			CreatedAt:        row.CreatedAt,
 		})
 	}
 	return out, total, nil

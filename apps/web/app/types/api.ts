@@ -51,6 +51,7 @@ export interface Member {
   name: string
   email: string
   role: Role
+  two_factor_enabled: boolean
   created_at: string
 }
 
@@ -84,6 +85,7 @@ export interface Domain {
   status: DomainStatus
   ssl_status: SslStatus
   is_default: boolean
+  root_redirect_url: string | null
   verification_method: string
   verification_error: string | null
   verified_at: string | null
@@ -110,6 +112,8 @@ export interface Link {
   external_reference: string | null
   metadata?: LinkMetadata
   created_via: 'dashboard' | 'api'
+  created_by_name: string | null
+  created_by_email: string | null
   created_at: string
   updated_at: string
 }
@@ -155,7 +159,18 @@ export interface Overview {
   expiring_links: number
   expiring_api_keys: number
   domain_issues: number
-  recent_links: Link[]
+  recent_links: OverviewRecentLink[]
+}
+
+export interface OverviewRecentLink {
+  id: string
+  slug: string
+  title: string | null
+  short_url: string
+  destination_url: string
+  status: LinkStatus
+  clicks: number
+  created_at: string
 }
 
 export interface AuditEntry {

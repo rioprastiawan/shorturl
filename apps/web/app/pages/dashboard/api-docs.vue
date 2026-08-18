@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import spec from '../../../public/openapi.json'
 
-definePageMeta({ middleware: 'auth' })
+definePageMeta({ middleware: ['auth', 'workspace-admin'] })
 useHead({ title: 'API documentation · ShortURL' })
 
 type Method = 'get' | 'post' | 'patch' | 'delete'
@@ -15,6 +15,7 @@ type Operation = {
 const methods: Method[] = ['get', 'post', 'patch', 'delete']
 const search = ref('')
 const selectedId = ref('createLink')
+const errorExamplesOpen = ref(false)
 
 const operations = Object.entries(spec.paths).flatMap(([path, pathItem]) =>
   methods.flatMap((method) => {
@@ -65,7 +66,7 @@ const pretty = (value: unknown) => JSON.stringify(value, null, 2)
 
 <template>
   <div class="mx-auto flex w-full max-w-[92rem] flex-col gap-4">
-    <header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <div class="mb-1 flex items-center gap-2 text-xs font-semibold text-(--color-accent)">
           <Icon name="lucide:braces" size="15" />
@@ -76,7 +77,7 @@ const pretty = (value: unknown) => JSON.stringify(value, null, 2)
           Explore every endpoint, request field, response shape, and error without guessing the backend contract.
         </p>
       </div>
-      <div class="flex shrink-0 gap-2">
+      <div class="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0">
         <UiButton to="/dashboard/api-keys" variant="secondary">
           <Icon name="lucide:key-round" size="15" /> API keys
         </UiButton>
@@ -128,19 +129,19 @@ const pretty = (value: unknown) => JSON.stringify(value, null, 2)
       <main v-if="selected" class="min-w-0 p-4 sm:p-5">
         <div class="flex flex-wrap items-center gap-2">
           <span class="rounded px-2 py-1 font-mono text-[10px] font-black uppercase" :class="methodClass[selected.method]">{{ selected.method }}</span>
-          <code class="text-sm font-semibold">{{ selected.path }}</code>
+          <code class="min-w-0 break-all text-sm font-semibold">{{ selected.path }}</code>
         </div>
         <h2 class="mt-3 text-lg font-bold">{{ selected.summary }}</h2>
         <p class="mt-1 max-w-3xl text-sm leading-relaxed text-(--color-content-muted)">{{ selected.description }}</p>
 
-        <div class="mt-5 grid gap-4 xl:grid-cols-2">
-          <section v-if="requestBodyExample">
+        <div class="mt-5 grid min-w-0 max-w-full gap-4 [&>*]:min-w-0 [&>*]:max-w-full xl:grid-cols-2">
+          <section v-if="requestBodyExample" class="min-w-0 max-w-full overflow-hidden">
             <h3 class="mb-2 text-xs font-bold uppercase tracking-wider text-(--color-content-subtle)">Example request body</h3>
             <DeveloperCodeBlock :code="pretty(requestBodyExample)" language="json" />
           </section>
-          <section :class="requestBodyExample ? '' : 'xl:col-span-2'">
+          <section class="min-w-0 max-w-full overflow-hidden" :class="requestBodyExample ? '' : 'xl:col-span-2'">
             <h3 class="mb-2 text-xs font-bold uppercase tracking-wider text-(--color-content-subtle)">Example success response</h3>
-            <div v-if="responseExample"><DeveloperCodeBlock :code="pretty(responseExample)" language="json" /></div>
+            <div v-if="responseExample" class="min-w-0 max-w-full"><DeveloperCodeBlock :code="pretty(responseExample)" language="json" /></div>
             <div v-else class="grid min-h-24 place-items-center rounded-xl border border-dashed border-(--color-border) bg-(--color-surface-muted)/50 text-sm text-(--color-content-muted)">
               204 No Content — the response body is empty.
             </div>
@@ -157,13 +158,12 @@ const pretty = (value: unknown) => JSON.stringify(value, null, 2)
           </div>
         </section>
 
-        <details class="mt-5 rounded-xl border border-(--color-border) bg-(--color-surface-muted)/35 p-3.5">
-          <summary class="cursor-pointer text-sm font-semibold">See authentication and validation error examples</summary>
-          <div class="mt-3 grid gap-3 xl:grid-cols-2">
+        <UiDisclosure v-model="errorExamplesOpen" class="mt-5" title="Authentication and validation errors" description="Inspect representative API error response bodies." icon="lucide:triangle-alert">
+          <div class="grid min-w-0 max-w-full gap-3 [&>*]:min-w-0 [&>*]:max-w-full xl:grid-cols-2">
             <DeveloperCodeBlock :code="pretty(unauthorizedExample)" language="json" />
             <DeveloperCodeBlock :code="pretty(validationExample)" language="json" />
           </div>
-        </details>
+        </UiDisclosure>
       </main>
     </div>
   </div>

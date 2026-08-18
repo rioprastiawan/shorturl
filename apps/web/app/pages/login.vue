@@ -107,10 +107,9 @@ async function submit() {
         />
       </div>
 
-      <UiInput
+      <UiPasswordInput
         v-model="password"
         label="Password"
-        type="password"
         autocomplete="current-password"
         required
         :error="errors.password"
