@@ -30,7 +30,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/", h.list)
 	r.Post("/", h.create)
-	r.With(chimw.Timeout(90 * time.Second)).Post("/bulk", h.bulkCreate)
+	r.With(chimw.Timeout(90*time.Second)).Post("/bulk", h.bulkCreate)
 	r.Post("/preview", h.preview)
 	r.Get("/tags", h.listTags)
 	r.Get("/audit-log", h.listAuditLog)
